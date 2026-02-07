@@ -22,6 +22,7 @@ export default function LeafletView({
   const markerObjects = useRef({});
   const userMarker = useRef(null);
   const crimeLayers = useRef({});
+  const crimePulseTimers = useRef({});
   const unitMarkers = useRef({});
   const lineLayer = useRef(null);
 
@@ -115,27 +116,62 @@ export default function LeafletView({
     if (!map) return;
     const sync = async () => {
       const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
+      // clear removed zones
       Object.keys(crimeLayers.current).forEach((id) => {
         if (!crimeZones.find((c) => c.id === id)) {
           crimeLayers.current[id].remove();
           delete crimeLayers.current[id];
+          if (crimePulseTimers.current[id]) {
+            clearInterval(crimePulseTimers.current[id].timer);
+            crimePulseTimers.current[id].circle.remove();
+            delete crimePulseTimers.current[id];
+          }
         }
       });
       crimeZones.forEach((c) => {
-        if (crimeLayers.current[c.id]) return;
-        const circle = L.circleMarker([c.lat, c.lng], {
+        if (crimeLayers.current[c.id]) {
+          // update label if needed
+          crimeLayers.current[c.id].bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
+          return;
+        }
+        const baseRadius = c.radius || 200;
+        const inner = L.circleMarker([c.lat, c.lng], {
           radius: 10,
           color: '#ff4d4d',
           weight: 2,
           fillColor: '#ff4d4d',
-          fillOpacity: 0.35,
+          fillOpacity: 0.55,
+          className: 'danger-zone',
         }).addTo(map);
-        circle.bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
-        circle.on('click', () => onSelectCrime?.(c.id));
-        crimeLayers.current[c.id] = circle;
+        inner.bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
+        inner.on('click', () => onSelectCrime?.(c.id));
+        crimeLayers.current[c.id] = inner;
+
+        // pulsing outer ring (meters)
+        const pulseCircle = L.circle([c.lat, c.lng], {
+          radius: baseRadius,
+          color: '#ff2d2d',
+          weight: 0,
+          fillColor: '#ff2d2d',
+          fillOpacity: 0.08,
+          className: 'danger-pulse',
+        }).addTo(map);
+        const timer = setInterval(() => {
+          const scale = 1 + 0.25 * Math.sin(Date.now() / 400);
+          pulseCircle.setRadius(baseRadius * scale);
+          pulseCircle.setStyle({ fillOpacity: 0.05 + 0.1 * (0.5 + 0.5 * Math.sin(Date.now() / 400)) });
+        }, 120);
+        crimePulseTimers.current[c.id] = { timer, circle: pulseCircle };
       });
     };
     sync();
+    return () => {
+      Object.values(crimePulseTimers.current).forEach(({ timer, circle }) => {
+        clearInterval(timer);
+        circle.remove();
+      });
+      crimePulseTimers.current = {};
+    };
   }, [crimeZones, onSelectCrime]);
 
   // Unit markers / checkpoints
@@ -184,10 +220,12 @@ export default function LeafletView({
       if (!lines.length) return;
       const polylines = lines.map((l) =>
         L.polyline(
-          [
-            [l.from.lat, l.from.lng],
-            [l.to.lat, l.to.lng],
-          ],
+          l.coords && l.coords.length
+            ? l.coords.map((p) => [p.lat, p.lng])
+            : [
+                [l.from.lat, l.from.lng],
+                [l.to.lat, l.to.lng],
+              ],
           { color: '#f6c452', weight: 2, dashArray: l.status === 'arrived' ? '' : '6 4' }
         )
       );

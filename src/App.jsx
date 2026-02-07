@@ -10,7 +10,7 @@ export default function App() {
   const [markers, setMarkers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [timeResult, setTimeResult] = useState(null);
-  const [mode, setMode] = useState('2d');
+  const [mode, setMode] = useState('3d');
   const [map3dOk, setMap3dOk] = useState(true);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
@@ -74,39 +74,90 @@ export default function App() {
     setTimeResult({ distance: dist, times });
   };
 
-  const assignDispatch = (crimeId, unitId) => {
+  const fetchRoute = async (from, to) => {
+    const token = import.meta.env.VITE_MAPBOX_TOKEN;
+    try {
+      if (token) {
+        const url = `https://api.mapbox.com/directions/v5/mapbox/driving/${from.lng},${from.lat};${to.lng},${to.lat}?geometries=geojson&overview=full&access_token=${token}`;
+        const res = await fetch(url);
+        const data = await res.json();
+        if (data?.routes?.length) {
+          return {
+            coords: data.routes[0].geometry.coordinates, // [lng,lat]
+            distance: data.routes[0].distance, // meters
+            duration: data.routes[0].duration, // seconds
+          };
+        }
+      }
+    } catch (e) {
+      console.warn('Route fetch failed, using straight line', e);
+    }
+    const dist = haversineDistance(from, to);
+    return {
+      coords: [
+        [from.lng, from.lat],
+        [to.lng, to.lat],
+      ],
+      distance: dist,
+      duration: dist / 17,
+    };
+  };
+
+  const assignDispatch = async (crimeId, unitId) => {
     const crime = crimeZones.find((c) => c.id === crimeId);
     const unit = units.find((u) => u.id === unitId);
     if (!crime || !unit) return;
-    const dist = haversineDistance({ lat: unit.lat, lng: unit.lng }, { lat: crime.lat, lng: crime.lng });
-    const etaSeconds = dist / 17; // cruiser speed default
-    setDispatches((d) => [
-      { id: crypto.randomUUID(), crimeId, unitId, status: 'en route', createdAt: new Date(), etaSeconds },
-      ...d,
-    ]);
-    setUnits((list) =>
-      list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u))
-    );
+    const route = await fetchRoute({ lat: unit.lat, lng: unit.lng }, { lat: crime.lat, lng: crime.lng });
+    const etaSeconds = route.duration || route.distance / 17;
+    const dispatch = {
+      id: crypto.randomUUID(),
+      crimeId,
+      unitId,
+      status: 'en route',
+      createdAt: new Date(),
+      etaSeconds,
+      routeCoords: route.coords,
+      totalMeters: route.distance,
+      progress: 0,
+    };
+    setDispatches((d) => [dispatch, ...d]);
+    setUnits((list) => list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u)));
     setSelected({ lat: crime.lat, lng: crime.lng });
-    setTimeResult({ distance: dist, times: [{ mode: 'cruiser', duration: etaSeconds }] });
+    setTimeResult({ distance: route.distance, times: [{ mode: 'cruiser', duration: etaSeconds }] });
   };
 
   const updateDispatchStatus = (dispatchId, status) => {
     setDispatches((d) => d.map((x) => (x.id === dispatchId ? { ...x, status } : x)));
   };
 
-  // move dispatched units toward their crime target
+  // move dispatched units toward their crime target (follow road route if available)
   useEffect(() => {
     const stepMs = 1000;
-    const speed = 17; // m/s cruiser
-    const moveTowards = (from, to, meters) => {
-      const dist = haversineDistance(from, to);
-      if (dist === 0 || meters >= dist) return { ...to };
-      const ratio = meters / dist;
-      return {
-        lat: from.lat + (to.lat - from.lat) * ratio,
-        lng: from.lng + (to.lng - from.lng) * ratio,
-      };
+    const speed = 15; // m/s cruiser
+    const pointAlong = (coords, progress) => {
+      if (!coords || coords.length < 2) return null;
+      const segLens = [];
+      let total = 0;
+      for (let i = 0; i < coords.length - 1; i++) {
+        const a = { lng: coords[i][0], lat: coords[i][1] };
+        const b = { lng: coords[i + 1][0], lat: coords[i + 1][1] };
+        const d = haversineDistance(a, b);
+        segLens.push(d);
+        total += d;
+      }
+      if (total === 0) return { lat: coords[0][1], lng: coords[0][0] };
+      let remaining = progress * total;
+      for (let i = 0; i < segLens.length; i++) {
+        if (remaining <= segLens[i]) {
+          const r = segLens[i] === 0 ? 0 : remaining / segLens[i];
+          const a = coords[i];
+          const b = coords[i + 1];
+          return { lat: a[1] + (b[1] - a[1]) * r, lng: a[0] + (b[0] - a[0]) * r };
+        }
+        remaining -= segLens[i];
+      }
+      const last = coords[coords.length - 1];
+      return { lat: last[1], lng: last[0] };
     };
     const id = setInterval(() => {
       setUnits((prevUnits) => {
@@ -117,17 +168,26 @@ export default function App() {
           if (!dispatch) return u;
           const target = crimeZones.find((c) => c.id === dispatch.crimeId);
           if (!target) return u;
-          const next = moveTowards({ lat: u.lat, lng: u.lng }, { lat: target.lat, lng: target.lng }, speed * (stepMs / 1000));
-          const remaining = haversineDistance(next, { lat: target.lat, lng: target.lng });
-          if (remaining < 8) {
+          const coords = dispatch.routeCoords || [
+            [u.lng, u.lat],
+            [target.lng, target.lat],
+          ];
+          const total = dispatch.totalMeters || haversineDistance({ lat: coords[0][1], lng: coords[0][0] }, { lat: coords.at(-1)[1], lng: coords.at(-1)[0] });
+          const progress = Math.min(1, (dispatch.progress || 0) + (speed * (stepMs / 1000)) / (total || 1));
+          const nextPoint = pointAlong(coords, progress) || { lat: target.lat, lng: target.lng };
+          const remaining = haversineDistance(nextPoint, { lat: target.lat, lng: target.lng });
+          if (remaining < 8 || progress >= 1) {
             arrivedIds.push(dispatch.id);
             return { ...u, lat: target.lat, lng: target.lng, status: 'on_scene' };
           }
-          return { ...u, lat: next.lat, lng: next.lng, status: 'dispatched' };
+          setDispatches((dlist) =>
+            dlist.map((d) => (d.id === dispatch.id ? { ...d, progress, totalMeters: total, routeCoords: coords } : d))
+          );
+          return { ...u, lat: nextPoint.lat, lng: nextPoint.lng, status: 'dispatched' };
         });
         if (arrivedIds.length) {
           setDispatches((d) =>
-            d.map((x) => (arrivedIds.includes(x.id) ? { ...x, status: 'arrived' } : x))
+            d.map((x) => (arrivedIds.includes(x.id) ? { ...x, status: 'arrived', progress: 1 } : x))
           );
         }
         return updatedUnits;
@@ -191,10 +251,15 @@ export default function App() {
       const crime = crimeZones.find((c) => c.id === d.crimeId);
       const unit = units.find((u) => u.id === d.unitId);
       if (!crime || !unit) return null;
+      const coords = d.routeCoords
+        ? d.routeCoords.map(([lng, lat]) => ({ lat, lng }))
+        : [
+            { lat: unit.lat, lng: unit.lng },
+            { lat: crime.lat, lng: crime.lng },
+          ];
       return {
         id: d.id,
-        from: { lat: unit.lat, lng: unit.lng },
-        to: { lat: crime.lat, lng: crime.lng },
+        coords,
         status: d.status,
       };
     })

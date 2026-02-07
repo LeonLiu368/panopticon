@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
@@ -10,8 +10,10 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   const mapInstance = useRef(null);
   const markerObjects = useRef({});
   const unitObjects = useRef({});
-  const zoneLayers = useRef({});
+  const zoneLayers = useRef(false);
+  const pulseTimer = useRef(null);
   const mapLoaded = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
   const lineLayerId = 'dispatch-lines';
 
   useEffect(() => {
@@ -41,6 +43,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
 
     map.on('load', () => {
       mapLoaded.current = true;
+      setMapReady(true);
 
       // 3D terrain
       map.addSource('mapbox-dem', {
@@ -140,59 +143,100 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
   }, [markers, onRemoveMarker]);
 
-  // sync crime zones as circles
+  // sync crime zones as a single source + layers (with pulsing halo)
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map || !mapLoaded.current) return;
-    Object.keys(zoneLayers.current).forEach((id) => {
-      if (!crimeZones.find((c) => c.id === id)) {
-        if (map.getLayer(`${id}-label`)) map.removeLayer(`${id}-label`);
-        if (map.getLayer(id)) map.removeLayer(id);
-        if (map.getSource(id)) map.removeSource(id);
-        delete zoneLayers.current[id];
+    if (!map || !mapReady) return;
+
+    const sourceId = 'crime-zones';
+    const layerId = 'crime-zones-circles';
+    const pulseId = 'crime-zones-pulse';
+    const labelId = 'crime-zones-labels';
+
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: crimeZones.map((c) => ({
+        type: 'Feature',
+        properties: { ...c, name: c.name || c.id },
+        geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+      })),
+    };
+
+    if (map.getSource(sourceId)) {
+      map.getSource(sourceId).setData(featureCollection);
+    } else {
+      map.addSource(sourceId, { type: 'geojson', data: featureCollection });
+    }
+
+    const ensureLayer = (id, def) => {
+      if (!map.getLayer(id)) map.addLayer(def);
+    };
+
+    ensureLayer(layerId, {
+      id: layerId,
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': 16,
+        'circle-color': '#ff4d4d',
+        'circle-stroke-color': '#b30000',
+        'circle-stroke-width': 1.5,
+        'circle-opacity': 0.55,
+      },
+    });
+
+    ensureLayer(pulseId, {
+      id: pulseId,
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': 36,
+        'circle-color': '#ff2d2d',
+        'circle-opacity': 0.12,
+      },
+    });
+
+    ensureLayer(labelId, {
+      id: labelId,
+      type: 'symbol',
+      source: sourceId,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-offset': [0, 1.2],
+      },
+      paint: {
+        'text-color': '#ffecec',
+        'text-halo-color': '#b30000',
+        'text-halo-width': 1,
+      },
+    });
+
+    // click handler
+    map.off('click', layerId);
+    map.on('click', layerId, (e) => {
+      const id = e.features?.[0]?.properties?.id || e.features?.[0]?.properties?.name;
+      if (id) onSelectCrime?.(id);
+    });
+
+    // animation
+    if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
+    const animate = () => {
+      const t = Date.now() / 500;
+      const scale = 1 + 0.35 * Math.sin(t);
+      if (map.getLayer(pulseId)) {
+        map.setPaintProperty(pulseId, 'circle-radius', 36 * scale);
+        map.setPaintProperty(pulseId, 'circle-opacity', 0.05 + 0.1 * (0.5 + 0.5 * Math.sin(t)));
       }
-    });
-    crimeZones.forEach((c) => {
-      if (zoneLayers.current[c.id]) return;
-      map.addSource(c.id, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
-          properties: c,
-        },
-      });
-      map.addLayer({
-        id: c.id,
-        type: 'circle',
-        source: c.id,
-        paint: {
-          'circle-radius': 14,
-          'circle-color': '#ff4d4d',
-          'circle-stroke-color': '#b30000',
-          'circle-stroke-width': 1.5,
-          'circle-opacity': 0.5,
-        },
-      });
-      map.addLayer({
-        id: `${c.id}-label`,
-        type: 'symbol',
-        source: c.id,
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-size': 12,
-          'text-offset': [0, 1.2],
-        },
-        paint: {
-          'text-color': '#ffecec',
-          'text-halo-color': '#b30000',
-          'text-halo-width': 1,
-        },
-      });
-      map.on('click', c.id, () => onSelectCrime?.(c.id));
-      zoneLayers.current[c.id] = true;
-    });
-  }, [crimeZones, onSelectCrime]);
+      pulseTimer.current = requestAnimationFrame(animate);
+    };
+    animate();
+
+    zoneLayers.current = true;
+    return () => {
+      if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
+    };
+  }, [crimeZones, onSelectCrime, mapReady]);
 
   // sync police unit markers
   useEffect(() => {
@@ -243,10 +287,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: [
-              [l.from.lng, l.from.lat],
-              [l.to.lng, l.to.lat],
-            ],
+            coordinates: (l.coords || []).map((p) => [p.lng, p.lat]),
           },
         })),
       },
