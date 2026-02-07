@@ -15,6 +15,8 @@ export default function Map3DView({
   onSelectCrime,
   onError,
   lines = [],
+  bodycamActive = false,
+  onBodycamClick,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -26,10 +28,9 @@ export default function Map3DView({
   const [mapReady, setMapReady] = useState(false);
   const activeInputRef = useRef(null);
   const lineLayerId = 'dispatch-lines';
+  const bodycamPopupRef = useRef(null);
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
-  const standbyStreamRef = useRef(null);
-  const unitPopupCache = useRef({});
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -185,7 +186,6 @@ export default function Map3DView({
       markerObjects.current = {};
       Object.values(unitObjects.current).forEach((mk) => mk.remove());
       unitObjects.current = {};
-      unitPopupCache.current = {};
       zoneLayers.current = {};
       mapLoaded.current = false;
       map.remove();
@@ -346,101 +346,43 @@ export default function Map3DView({
         delete unitObjects.current[id];
       }
     });
-    const buildBodycamPopup = (unit) => {
-      const wrap = document.createElement('div');
-      wrap.style.width = '220px';
-      wrap.innerHTML = `<strong>${unit.name}</strong><br/><span style="color:#9fb3d1;">${unit.status}</span>`;
-      const frame = document.createElement('div');
-      frame.style.marginTop = '6px';
-      frame.style.borderRadius = '8px';
-      frame.style.overflow = 'hidden';
-      frame.style.border = '1px solid #0d1627';
-      frame.style.boxShadow = '0 6px 16px rgba(0,0,0,0.35)';
-      const video = document.createElement('video');
-      video.width = 220;
-      video.height = 124;
-      video.autoplay = true;
-      video.muted = true;
-      video.loop = true;
-      video.playsInline = true;
-      video.style.display = 'block';
-      video.style.objectFit = 'cover';
-      frame.appendChild(video);
-      wrap.appendChild(frame);
-      const caption = document.createElement('div');
-      caption.textContent = 'Bodycam feed';
-      caption.style.fontSize = '10px';
-      caption.style.color = '#72819e';
-      caption.style.marginTop = '4px';
-      wrap.appendChild(caption);
-
-      const attachCamera = () => {
-        if (unit.id === 'u-standby' && navigator.mediaDevices?.getUserMedia) {
-          const tryStream = async () => {
-            try {
-              if (!standbyStreamRef.current) {
-                standbyStreamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-              }
-              video.srcObject = standbyStreamRef.current;
-              await video.play().catch(() => {});
-              caption.textContent = 'Bodycam feed (live)';
-            } catch (err) {
-              video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
-              caption.textContent = 'Bodycam feed (demo)';
-            }
-          };
-          tryStream();
-        } else {
-          video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
-          caption.textContent = 'Bodycam feed (demo)';
-        }
-      };
-      return { el: wrap, attachCamera };
-    };
-
     units.forEach((u) => {
-      const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
-      const halo = u.status === 'dispatched' ? 'rgba(246,196,82,0.25)' : 'rgba(110,244,195,0.25)';
+      const isDispatched = u.status === 'dispatched';
+      const color = isDispatched ? '' : '#6ef4c3';
       const existing = unitObjects.current[u.id];
-      if (!unitPopupCache.current[u.id]) unitPopupCache.current[u.id] = buildBodycamPopup(u);
-      const popupContent = unitPopupCache.current[u.id];
-      // keep text in sync
-      const statusNode = popupContent.el.querySelector('span');
-      if (statusNode) statusNode.textContent = u.status;
+
       if (existing) {
         existing.setLngLat([u.lng, u.lat]);
         const el = existing.getElement();
         if (el) {
-          el.style.background = color;
-          el.style.boxShadow = `0 0 0 4px ${halo}`;
+          if (isDispatched) {
+            el.style.background = '';
+            el.classList.add('unit-dispatched');
+          } else {
+            el.style.background = color;
+            el.classList.remove('unit-dispatched');
+          }
           el.title = `${u.name} · ${u.status}`;
         }
         const popup = existing.getPopup();
-        if (popup) {
-          popup.setDOMContent(popupContent.el);
-          popup.off('open', popupContent.attachCamera);
-          popup.on('open', () => {
-            popupContent.attachCamera();
-            const vid = popupContent.el.querySelector('video');
-            if (vid) vid.play().catch(() => {});
-          });
-        }
+        if (popup) popup.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
         return;
       }
+
       const el = document.createElement('div');
       el.style.width = '16px';
       el.style.height = '16px';
       el.style.borderRadius = '4px';
-      el.style.background = color;
-      el.style.boxShadow = `0 0 0 4px ${halo}`;
       el.title = `${u.name} · ${u.status}`;
+      if (isDispatched) {
+        el.classList.add('unit-dispatched');
+      } else {
+        el.style.background = color;
+      }
+
       const popup = new mapboxgl.Popup({ offset: 10, closeOnClick: false, closeButton: true });
-      popup.setDOMContent(popupContent.el);
-      popup.on('open', () => {
-        popupContent.attachCamera();
-        const vid = popupContent.el.querySelector('video');
-        if (vid) vid.play().catch(() => {});
-      });
+      popup.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
+
       const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([u.lng, u.lat])
         .setPopup(popup)
@@ -487,6 +429,26 @@ export default function Map3DView({
       },
     });
   }, [lines]);
+
+  // "Bodycam Active" popup at Shadyside Vandalism when Unit B4 arrives
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (bodycamPopupRef.current) {
+      bodycamPopupRef.current.remove();
+      bodycamPopupRef.current = null;
+    }
+    if (!map || !bodycamActive) return;
+    const el = document.createElement('div');
+    el.className = 'bodycam-tag';
+    el.innerHTML = '<span class="bodycam-tag-dot"></span> Bodycam Active';
+    el.onclick = () => onBodycamClick?.();
+    const popup = new mapboxgl.Popup({ offset: 30, closeButton: false, closeOnClick: false })
+      .setLngLat([-79.9355, 40.4548])
+      .setDOMContent(el)
+      .addTo(map);
+    bodycamPopupRef.current = popup;
+    return () => popup.remove();
+  }, [bodycamActive, onBodycamClick]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>

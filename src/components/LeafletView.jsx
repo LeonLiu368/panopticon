@@ -16,6 +16,8 @@ export default function LeafletView({
   onSelectCrime,
   myLocation,
   lines = [],
+  bodycamActive = false,
+  onBodycamClick,
 }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
@@ -27,6 +29,7 @@ export default function LeafletView({
   const unitMarkers = useRef({});
   const lineLayer = useRef(null);
   const heatGroup = useRef(null);
+  const bodycamPopupRef = useRef(null);
   const activeInputRef = useRef(null);
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
@@ -337,11 +340,14 @@ export default function LeafletView({
         }
       });
       units.forEach((u) => {
-        const color = u.status === 'dispatched' ? '#f6c452' : u.status === 'on_scene' ? '#ff6b6b' : '#6ef4c3';
+        const isDispatched = u.status === 'dispatched';
+        const color = u.status === 'on_scene' ? '#ff6b6b' : '#6ef4c3';
+        const dotHtml = isDispatched
+          ? `<div class="unit-dispatched" style="width:14px;height:14px;border-radius:4px;border:2px solid #0d1627;"></div>`
+          : `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`;
         const icon = L.divIcon({
           className: 'unit-marker',
-          html: `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`,
-          html: `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`,
+          html: dotHtml,
           iconAnchor: [7, 7],
         });
         if (unitMarkers.current[u.id]) {
@@ -351,12 +357,7 @@ export default function LeafletView({
           return;
         }
         const marker = L.marker([u.lat, u.lng], { title: u.name, opacity: u.status === 'available' ? 1 : 0.8, icon });
-        marker.bindPopup(bodycam.el, { autoClose: false, closeOnClick: false, closeButton: true });
-        marker.on('popupopen', () => {
-          bodycam.attachCamera();
-          const vid = bodycam.el.querySelector('video');
-          if (vid) vid.play().catch(() => {});
-        });
+        marker.bindPopup(`<strong>${u.name}</strong><br/>${u.status}`);
         marker.on('click', () => {
           map.flyTo([u.lat, u.lng], 15);
           marker.openPopup();
@@ -406,6 +407,35 @@ export default function LeafletView({
     if (!map || !myLocation) return;
     map.flyTo([myLocation.lat, myLocation.lng], 15, { animate: true, duration: 0.9, easeLinearity: 0.1 });
   }, [myLocation]);
+
+  // "Bodycam Active" popup at Shadyside Vandalism when Unit B4 arrives
+  useEffect(() => {
+    const map = mapInstance.current;
+    if (bodycamPopupRef.current) {
+      bodycamPopupRef.current.remove();
+      bodycamPopupRef.current = null;
+    }
+    if (!map || !mapReady || !bodycamActive) return;
+    const sync = async () => {
+      const L = await loadLeaflet();
+      const el = document.createElement('div');
+      el.className = 'bodycam-tag';
+      el.innerHTML = '<span class="bodycam-tag-dot"></span> Bodycam Active';
+      el.onclick = () => onBodycamClick?.();
+      const popup = L.popup({ closeButton: false, closeOnClick: false, autoClose: false, className: 'bodycam-popup' })
+        .setLatLng([40.4548, -79.9355])
+        .setContent(el)
+        .openOn(map);
+      bodycamPopupRef.current = popup;
+    };
+    sync();
+    return () => {
+      if (bodycamPopupRef.current) {
+        bodycamPopupRef.current.remove();
+        bodycamPopupRef.current = null;
+      }
+    };
+  }, [bodycamActive, onBodycamClick, mapReady]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>

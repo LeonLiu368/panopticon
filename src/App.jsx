@@ -4,6 +4,7 @@ import Map3DView from './components/Map3DView';
 import DispatchPanel from './components/DispatchPanel';
 import TranscriptRecorder from './components/TranscriptRecorder';
 import { haversineDistance, formatDuration } from './utils/geo';
+import bodycamVideoSrc from '../media/StockBodycam.mp4';
 
 export default function App() {
   const [markers, setMarkers] = useState([]);
@@ -41,6 +42,13 @@ export default function App() {
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
   const [selectedTarget, setSelectedTarget] = useState({ type: 'crime', id: 'cz-01' });
   const [myLocation, setMyLocation] = useState(null);
+  const [bodycamActive, setBodycamActive] = useState(false);
+  const [bodycamOpen, setBodycamOpen] = useState(false);
+  const [panelPos, setPanelPos] = useState(() => ({
+    x: window.innerWidth - 364,
+    y: window.innerHeight - 304,
+  }));
+  const [panelSize, setPanelSize] = useState({ w: 340, h: 280 });
 
   const handleMap3dError = useCallback(() => {
     setMap3dOk(false);
@@ -67,6 +75,15 @@ export default function App() {
       ];
     });
   }, [myLocation]);
+
+  // Detect when Unit B4 arrives at Shadyside Vandalism → activate bodycam
+  useEffect(() => {
+    const arrived = dispatches.some(
+      (d) => d.unitId === 'u-12' && d.crimeId === 'cz-08' && d.status === 'arrived'
+    );
+    setBodycamActive(arrived);
+    if (!arrived) setBodycamOpen(false);
+  }, [dispatches]);
 
   const addMarker = useCallback((marker) => {
     setMarkers((prev) => [...prev, marker]);
@@ -359,12 +376,14 @@ export default function App() {
           if (!dispatch) return u;
           const target = crimeZones.find((c) => c.id === dispatch.crimeId);
           if (!target) return u;
+          // Unit B4 → Shadyside Vandalism travels 3x faster
+          const effectiveSpeed = (u.id === 'u-12' && dispatch.crimeId === 'cz-08') ? speed * 3 : speed;
           const coords = dispatch.routeCoords || [
             [u.lng, u.lat],
             [target.lng, target.lat],
           ];
           const total = dispatch.totalMeters || haversineDistance({ lat: coords[0][1], lng: coords[0][0] }, { lat: coords.at(-1)[1], lng: coords.at(-1)[0] });
-          const progress = Math.min(1, (dispatch.progress || 0) + (speed * (stepMs / 1000)) / (total || 1));
+          const progress = Math.min(1, (dispatch.progress || 0) + (effectiveSpeed * (stepMs / 1000)) / (total || 1));
           const nextPoint = pointAlong(coords, progress) || { lat: target.lat, lng: target.lng };
           const remaining = haversineDistance(nextPoint, { lat: target.lat, lng: target.lng });
           if (remaining < 8 || progress >= 1) {
@@ -530,6 +549,8 @@ export default function App() {
             onSelectCrime={setSelectedCrimeId}
             lines={dispatchLines}
             onError={handleMap3dError}
+            bodycamActive={bodycamActive}
+            onBodycamClick={() => setBodycamOpen(true)}
           />
         ) : (
           <LeafletView
@@ -543,6 +564,8 @@ export default function App() {
             onSelectCrime={setSelectedCrimeId}
             myLocation={myLocation}
             lines={dispatchLines}
+            bodycamActive={bodycamActive}
+            onBodycamClick={() => setBodycamOpen(true)}
           />
         )}
       </div>
@@ -573,6 +596,51 @@ export default function App() {
         onNavigate={handleVoiceNavigate}
         onDispatchCommand={handleVoiceDispatch}
       />
+      {/* Bodycam panel — Unit B4 at Shadyside Vandalism.
+           Stays mounted (video keeps playing) while bodycamActive;
+           hidden visually when the user closes the panel. */}
+      {bodycamActive && (
+        <div
+          className="bodycam-panel"
+          style={{
+            left: panelPos.x, top: panelPos.y, width: panelSize.w, height: panelSize.h,
+            ...(bodycamOpen ? {} : { visibility: 'hidden', pointerEvents: 'none' }),
+          }}
+        >
+          <div
+            className="bodycam-panel-header"
+            onMouseDown={(e) => {
+              if (e.target.tagName === 'BUTTON') return;
+              e.preventDefault();
+              const ox = e.clientX - panelPos.x;
+              const oy = e.clientY - panelPos.y;
+              const onMove = (ev) => setPanelPos({ x: ev.clientX - ox, y: ev.clientY - oy });
+              const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            }}
+          >
+            <span>Unit B4 — Bodycam Feed</span>
+            <button className="ghost" onClick={() => setBodycamOpen(false)}>X</button>
+          </div>
+          <video src={bodycamVideoSrc} autoPlay loop muted playsInline className="bodycam-video" />
+          <div className="small">Shadyside Vandalism · Live feed</div>
+          <div
+            className="bodycam-resize-handle"
+            onMouseDown={(e) => {
+              e.preventDefault();
+              const sx = e.clientX;
+              const sy = e.clientY;
+              const sw = panelSize.w;
+              const sh = panelSize.h;
+              const onMove = (ev) => setPanelSize({ w: Math.max(240, sw + ev.clientX - sx), h: Math.max(180, sh + ev.clientY - sy) });
+              const onUp = () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+              window.addEventListener('mousemove', onMove);
+              window.addEventListener('mouseup', onUp);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }
