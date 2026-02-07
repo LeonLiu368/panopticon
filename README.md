@@ -6,12 +6,13 @@ A lightweight React + Vite prototype for a police dispatch console featuring:
 - Voice control using Web Speech API for add/remove/navigate commands
 - Camera access (mocked fallback) and ability to show street feed URLs
 
-## Getting started
+## Getting started (full-stack)
 ```bash
 npm install
-npm run dev
+npm run server   # starts lightweight API on http://localhost:4000
+npm run dev      # starts Vite frontend on http://localhost:5173
 ```
-Open http://localhost:5173.
+Set `VITE_API_URL` in `.env` if your API runs elsewhere.
 
 ## Map style (actual tiles / backend)
 Create a `.env` file and add one of (priority order):

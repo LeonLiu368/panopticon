@@ -51,7 +51,14 @@ export default function LeafletView({
           (pos) => {
             const coords = [pos.coords.latitude, pos.coords.longitude];
             map.setView(coords, 14);
-            const marker = L.circleMarker(coords, { radius: 8, color: '#6ef4c3' }).addTo(map).bindPopup('You are here');
+            const marker = L.circleMarker(coords, {
+              radius: 10,
+              color: '#7cc5ff',
+              weight: 2,
+              fillColor: '#7cc5ff',
+              fillOpacity: 0.35,
+              className: 'my-location-dot',
+            }).addTo(map).bindPopup('You are here');
             userMarker.current = marker;
           },
           () => {},
@@ -117,22 +124,32 @@ export default function LeafletView({
       const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
       Object.keys(crimeLayers.current).forEach((id) => {
         if (!crimeZones.find((c) => c.id === id)) {
-          crimeLayers.current[id].remove();
+          const layers = crimeLayers.current[id];
+          layers?.pin?.remove();
+          layers?.area?.remove();
           delete crimeLayers.current[id];
         }
       });
       crimeZones.forEach((c) => {
         if (crimeLayers.current[c.id]) return;
-        const circle = L.circleMarker([c.lat, c.lng], {
-          radius: 10,
-          color: '#ff4d4d',
+        const area = L.circle([c.lat, c.lng], {
+          radius: c.radius || 260,
+          color: '#ff1f45',
           weight: 2,
-          fillColor: '#ff4d4d',
-          fillOpacity: 0.35,
+          dashArray: '6 4',
+          fillColor: '#ff1f45',
+          fillOpacity: 0.16,
         }).addTo(map);
-        circle.bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
-        circle.on('click', () => onSelectCrime?.(c.id));
-        crimeLayers.current[c.id] = circle;
+        const pin = L.marker([c.lat, c.lng], {
+          zIndexOffset: 900,
+          icon: L.divIcon({
+            className: 'crime-pin',
+            html: `<div class="crime-dot"></div><span class="crime-label">${c.name}</span>`,
+            iconAnchor: [10, 12],
+          }),
+        }).addTo(map);
+        pin.on('click', () => onSelectCrime?.(c.id));
+        crimeLayers.current[c.id] = { pin, area };
       });
     };
     sync();

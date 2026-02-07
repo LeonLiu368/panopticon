@@ -1,40 +1,67 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, useCallback } from 'react';
 import LeafletView from './components/LeafletView';
-import Map3DView from './components/Map3DView';
 import DispatchPanel from './components/DispatchPanel';
 import VoiceControl from './components/VoiceControl';
 import TranscriptRecorder from './components/TranscriptRecorder';
 import { haversineDistance, formatDuration } from './utils/geo';
 
+const API = import.meta.env.VITE_API_URL || 'http://localhost:4000';
+
 export default function App() {
   const [markers, setMarkers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [timeResult, setTimeResult] = useState(null);
-  const [mode, setMode] = useState('2d');
-  const [map3dOk, setMap3dOk] = useState(true);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
-  const [crimeZones, setCrimeZones] = useState([
-    { id: 'cz-01', name: 'Forbes & Morewood Robbery', lat: 40.4427, lng: -79.9425, severity: 'high', radius: 220, reported: '02:10' },
-    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18' },
-    { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26' },
-  ]);
-  const [units, setUnits] = useState([
-    { id: 'u-11', name: 'Unit A1', lat: 40.4385, lng: -79.992, status: 'available' },
-    { id: 'u-12', name: 'Unit B4', lat: 40.446, lng: -79.955, status: 'available' },
-    { id: 'u-13', name: 'Bike Squad 2', lat: 40.4422, lng: -79.982, status: 'available' },
-    { id: 'u-14', name: 'K9-7', lat: 40.4308, lng: -79.999, status: 'standby' },
-  ]);
+  const [crimeZones, setCrimeZones] = useState([]);
+  const [units, setUnits] = useState([]);
   const [dispatches, setDispatches] = useState([]);
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
   const [myLocation, setMyLocation] = useState(null);
 
-  const addMarker = (marker) => {
-    setMarkers((prev) => [...prev, marker]);
+  const loadState = useCallback(async () => {
+    try {
+      const res = await fetch(`${API}/api/state`);
+      if (!res.ok) throw new Error('state fetch failed');
+      const data = await res.json();
+      setCrimeZones(data.crimeZones || []);
+      setMarkers(data.markers || []);
+      setUnits(data.units || []);
+      setDispatches(data.dispatches || []);
+      if ((data.crimeZones || []).length && !selectedCrimeId) setSelectedCrimeId(data.crimeZones[0].id);
+    } catch (e) {
+      console.warn('State load failed', e);
+    }
+  }, [selectedCrimeId]);
+
+  useEffect(() => {
+    loadState();
+    const id = setInterval(loadState, 8000);
+    return () => clearInterval(id);
+  }, [loadState]);
+
+  const addMarker = async (marker) => {
+    try {
+      const res = await fetch(`${API}/api/marker`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(marker),
+      });
+      const saved = await res.json();
+      setMarkers((prev) => [...prev, saved]);
+    } catch (e) {
+      console.error('Add marker failed', e);
+      setMarkers((prev) => [...prev, marker]); // fallback local
+    }
   };
 
-  const removeMarker = (id) => {
+  const removeMarker = async (id) => {
+    try {
+      await fetch(`${API}/api/marker/${id}`, { method: 'DELETE' });
+    } catch (e) {
+      console.warn('Remove marker failed', e);
+    }
     setMarkers((prev) => prev.filter((m) => m.id !== id));
   };
 
@@ -82,12 +109,22 @@ export default function App() {
     setUnits((list) =>
       list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u))
     );
+    fetch(`${API}/api/dispatch`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ crimeId, unitId, etaSeconds }),
+    }).catch((e) => console.warn('dispatch api failed', e));
     setSelected({ lat: crime.lat, lng: crime.lng });
     setTimeResult({ distance: dist, times: [{ mode: 'cruiser', duration: etaSeconds }] });
   };
 
   const updateDispatchStatus = (dispatchId, status) => {
     setDispatches((d) => d.map((x) => (x.id === dispatchId ? { ...x, status } : x)));
+    fetch(`${API}/api/dispatch/${dispatchId}/status`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ status }),
+    }).catch((e) => console.warn('dispatch status api failed', e));
   };
 
   // move dispatched units toward their crime target
@@ -203,26 +240,7 @@ export default function App() {
           <h1>Metro Dispatch Console</h1>
         </div>
         <div className="flex">
-          <div className="pill">{mode === '3d' ? '3D MapLibre' : '2D Leaflet'}</div>
-          <button
-            className="ghost"
-            onClick={() => {
-              if (mode === '3d') return setMode('2d');
-              if (!map3dOk) return alert('3D tiles unavailable; staying in 2D.');
-              setMode('3d');
-            }}
-          >
-            Switch to {mode === '3d' ? '2D' : '3D'}
-          </button>
-          <button className="ghost" onClick={() => {
-            if (navigator.geolocation) {
-              navigator.geolocation.getCurrentPosition((pos) => {
-                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
-                setMyLocation(coords);
-                setSelected(coords);
-              });
-            }
-          }}>My location</button>
+          <div className="pill">Leaflet view</div>
           <VoiceControl onCommand={updateFromVoice} />
         </div>
       </div>
@@ -238,34 +256,29 @@ export default function App() {
           <button className="primary" onClick={() => handleSearch()} disabled={searching}>
             {searching ? 'Searching…' : 'Go'}
           </button>
+          <button className="ghost" onClick={() => {
+            if (navigator.geolocation) {
+              navigator.geolocation.getCurrentPosition((pos) => {
+                const coords = { lat: pos.coords.latitude, lng: pos.coords.longitude };
+                setMyLocation(coords);
+                setSelected(coords);
+              });
+            }
+          }}>My location</button>
           {searchError && <span className="small" style={{ color: 'var(--danger)' }}>{searchError}</span>}
         </div>
-        {mode === '3d' ? (
-          <Map3DView
-            markers={markers}
-            onAddMarker={addMarker}
-            onRemoveMarker={removeMarker}
-            selected={selected}
-            crimeZones={crimeZones}
-            units={units}
-            onSelectCrime={setSelectedCrimeId}
-            lines={dispatchLines}
-            onError={() => { setMap3dOk(false); setMode('2d'); }}
-          />
-        ) : (
-          <LeafletView
-            markers={markers}
-            onAddMarker={addMarker}
-            onRemoveMarker={removeMarker}
-            selected={selected}
-            crimeZones={crimeZones}
-            units={units}
-            selectedCrimeId={selectedCrimeId}
-            onSelectCrime={setSelectedCrimeId}
-            myLocation={myLocation}
-            lines={dispatchLines}
-          />
-        )}
+        <LeafletView
+          markers={markers}
+          onAddMarker={addMarker}
+          onRemoveMarker={removeMarker}
+          selected={selected}
+          crimeZones={crimeZones}
+          units={units}
+          selectedCrimeId={selectedCrimeId}
+          onSelectCrime={setSelectedCrimeId}
+          myLocation={myLocation}
+          lines={dispatchLines}
+        />
       </div>
 
       <div className="card">

@@ -63,11 +63,11 @@ export default function DispatchPanel({
         <span className="pill">Crime zones · units · ETAs</span>
       </div>
 
-      <div className="dashboard-grid">
+      <div className="dashboard-grid" style={{ gridTemplateColumns: 'repeat(4, minmax(0,1fr))' }}>
         {quickStats.map((s) => (
-          <div key={s.label} className="dashboard-card">
+          <div key={s.label} className="dashboard-card" style={{ textAlign: 'center' }}>
             <div className="small">{s.label}</div>
-            <div style={{ fontSize: 22, fontWeight: 600 }}>{s.value}</div>
+            <div style={{ fontSize: 22, fontWeight: 700 }}>{s.value}</div>
           </div>
         ))}
       </div>
@@ -75,7 +75,7 @@ export default function DispatchPanel({
       <div className="controls-row" style={{ marginTop: 14 }}>
         <form className="card" onSubmit={handleManual} style={{ background: 'rgba(255,255,255,0.02)' }}>
           <div className="section-title">
-            <strong>Manual marker</strong>
+            <strong>Manual checkpoint</strong>
             <button className="ghost" type="submit">Drop + ETA</button>
           </div>
           <div className="grid-2">
@@ -100,7 +100,7 @@ export default function DispatchPanel({
               <input type="number" step="0.0001" value={manualMarker.lng} onChange={(e) => setManualMarker({ ...manualMarker, lng: e.target.value })} />
             </div>
           </div>
-          <p className="small">Adds a marker on the map and computes ETA from HQ.</p>
+          <p className="small">Adds a labeled checkpoint and computes ETA.</p>
         </form>
 
         <div className="card" style={{ background: 'rgba(255,255,255,0.02)' }}>
