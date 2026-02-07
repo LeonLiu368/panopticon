@@ -241,11 +241,18 @@ export default function Map3DView({
         default: return 30;
       }
     };
+    const riskColor = (risk) => {
+      switch ((risk || '').toLowerCase()) {
+        case 'low': return '#facc15';   // yellow
+        case 'medium': return '#fb923c'; // orange
+        default: return '#ef4444';      // red for high/critical
+      }
+    };
     const featureCollection = {
       type: 'FeatureCollection',
       features: crimeZones.map((c) => ({
         type: 'Feature',
-        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk) },
+        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk), riskColor: riskColor(c.risk) },
         geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
       })),
     };
@@ -266,8 +273,8 @@ export default function Map3DView({
       source: sourceId,
       paint: {
         'circle-radius': ['get', 'riskRadius'],
-        'circle-color': '#ff4d4d',
-        'circle-stroke-color': '#b30000',
+        'circle-color': ['get', 'riskColor'],
+        'circle-stroke-color': '#111827',
         'circle-stroke-width': 1.5,
         'circle-opacity': 0.55,
       },
@@ -279,7 +286,7 @@ export default function Map3DView({
       source: sourceId,
       paint: {
         'circle-radius': ['*', ['get', 'riskRadius'], 2.2],
-        'circle-color': '#ff2d2d',
+        'circle-color': ['get', 'riskColor'],
         'circle-opacity': 0.12,
       },
     });
@@ -336,6 +343,16 @@ export default function Map3DView({
         delete unitObjects.current[id];
       }
     });
+    const bodycamHtml = (unit) => `
+      <div style="width:220px">
+        <strong>${unit.name}</strong><br/>
+        <span style="color:#9fb3d1;">${unit.status}</span>
+        <div style="margin-top:6px;border-radius:8px;overflow:hidden;border:1px solid #0d1627;box-shadow:0 6px 16px rgba(0,0,0,0.35);">
+          <video src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" width="220" height="124" autoplay muted loop playsinline style="display:block;background:#000;"></video>
+        </div>
+        <div style="font-size:10px;color:#72819e;margin-top:4px;">Bodycam feed (demo)</div>
+      </div>`;
+
     units.forEach((u) => {
       const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
       const halo = u.status === 'dispatched' ? 'rgba(246,196,82,0.25)' : 'rgba(110,244,195,0.25)';
@@ -348,7 +365,7 @@ export default function Map3DView({
           el.style.boxShadow = `0 0 0 4px ${halo}`;
           el.title = `${u.name} · ${u.status}`;
         }
-        existing.getPopup()?.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
+        existing.getPopup()?.setHTML(bodycamHtml(u));
         return;
       }
       const el = document.createElement('div');
@@ -360,7 +377,7 @@ export default function Map3DView({
       el.title = `${u.name} · ${u.status}`;
       const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([u.lng, u.lat])
-        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`<strong>${u.name}</strong><br/>${u.status}`))
+        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(bodycamHtml(u)))
         .addTo(map);
       unitObjects.current[u.id] = mk;
     });

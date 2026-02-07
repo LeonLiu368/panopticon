@@ -218,6 +218,13 @@ export default function LeafletView({
           default: return (c) => c.radius || 150;
         }
       };
+      const riskColor = (risk) => {
+        switch ((risk || '').toLowerCase()) {
+          case 'low': return { stroke: '#facc15', fill: '#facc15' }; // yellow
+          case 'medium': return { stroke: '#fb923c', fill: '#fb923c' }; // orange
+          default: return { stroke: '#ef4444', fill: '#ef4444' }; // red for high/critical
+        }
+      };
       const riskWeight = (risk) => {
         switch ((risk || '').toLowerCase()) {
           case 'critical': return 1;
@@ -246,11 +253,12 @@ export default function LeafletView({
         crimePins.current[c.id] = pin;
 
         const baseRadius = riskRadius(c.risk)(c);
+        const colors = riskColor(c.risk);
         const inner = L.circleMarker([c.lat, c.lng], {
           radius: 10,
-          color: '#ff4d4d',
+          color: colors.stroke,
           weight: 2,
-          fillColor: '#ff4d4d',
+          fillColor: colors.fill,
           fillOpacity: 0.55,
           className: 'danger-zone',
         }).addTo(map);
@@ -325,6 +333,16 @@ export default function LeafletView({
           }
         }
       });
+      const bodycamHtml = (unit) => `
+        <div style="width:200px">
+          <strong>${unit.name}</strong><br/>
+          <span style="color:#4fc3f7;">${unit.status}</span>
+          <div style="margin-top:6px;border-radius:8px;overflow:hidden;border:1px solid #0d1627;box-shadow:0 6px 16px rgba(0,0,0,0.35);">
+            <video src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" width="200" height="112" autoplay muted loop playsinline style="display:block;background:#000;"></video>
+          </div>
+          <div style="font-size:10px;color:#72819e;margin-top:4px;">Bodycam feed (demo)</div>
+        </div>`;
+
       units.forEach((u) => {
         const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
         const icon = L.divIcon({
@@ -337,11 +355,11 @@ export default function LeafletView({
           existing.setLatLng([u.lat, u.lng]);
           existing.setOpacity(u.status === 'available' ? 1 : 0.8);
           existing.setIcon(icon);
-          existing.setPopupContent(`<strong>${u.name}</strong><br/>${u.status}`);
+          existing.setPopupContent(bodycamHtml(u));
           return;
         }
         const marker = L.marker([u.lat, u.lng], { title: u.name, opacity: u.status === 'available' ? 1 : 0.8, icon });
-        marker.bindPopup(`<strong>${u.name}</strong><br/>${u.status}`);
+        marker.bindPopup(bodycamHtml(u));
         marker.on('click', () => map.flyTo([u.lat, u.lng], 15));
         marker.addTo(map);
         unitMarkers.current[u.id] = marker;
