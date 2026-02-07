@@ -30,6 +30,8 @@ export default function LeafletView({
   const activeInputRef = useRef(null);
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
+  const standbyStreamRef = useRef(null);
+  const unitPopupCache = useRef({});
   const [mapReady, setMapReady] = useState(false);
 
   // Helper: load Leaflet and return L
@@ -59,7 +61,11 @@ export default function LeafletView({
         maxZoom: 20,
         worldCopyJump: true,
       });
-      L.tileLayer(tileUrl, { attribution: tileAttribution, maxZoom: 20 }).addTo(map);
+      L.tileLayer(tileUrl, {
+        attribution: tileAttribution,
+        maxZoom: 20,
+        detectRetina: true,
+      }).addTo(map);
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
@@ -148,6 +154,7 @@ export default function LeafletView({
         window.removeEventListener('keydown', keyListenerRef.current);
         keyListenerRef.current = null;
       }
+      unitPopupCache.current = {};
       setMapReady(false);
     };
   }, [onAddMarker]);
@@ -217,6 +224,13 @@ export default function LeafletView({
           default: return (c) => c.radius || 150;
         }
       };
+      const riskColor = (risk) => {
+        switch ((risk || '').toLowerCase()) {
+          case 'low': return { stroke: '#facc15', fill: '#facc15' }; // yellow
+          case 'medium': return { stroke: '#fb923c', fill: '#fb923c' }; // orange
+          default: return { stroke: '#ef4444', fill: '#ef4444' }; // red for high/critical
+        }
+      };
       const riskWeight = (risk) => {
         switch ((risk || '').toLowerCase()) {
           case 'critical': return 1;
@@ -245,11 +259,12 @@ export default function LeafletView({
         crimePins.current[c.id] = pin;
 
         const baseRadius = riskRadius(c.risk)(c);
+        const colors = riskColor(c.risk);
         const inner = L.circleMarker([c.lat, c.lng], {
           radius: 10,
-          color: '#ff4d4d',
+          color: colors.stroke,
           weight: 2,
-          fillColor: '#ff4d4d',
+          fillColor: colors.fill,
           fillOpacity: 0.55,
           className: 'danger-zone',
         }).addTo(map);
@@ -312,6 +327,7 @@ export default function LeafletView({
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !mapReady) return;
+    if (!map || !mapReady) return;
     const sync = async () => {
       const L = await loadLeaflet();
       Object.keys(unitMarkers.current).forEach((id) => {
@@ -325,6 +341,7 @@ export default function LeafletView({
         const icon = L.divIcon({
           className: 'unit-marker',
           html: `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`,
+          html: `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`,
           iconAnchor: [7, 7],
         });
         if (unitMarkers.current[u.id]) {
@@ -334,8 +351,16 @@ export default function LeafletView({
           return;
         }
         const marker = L.marker([u.lat, u.lng], { title: u.name, opacity: u.status === 'available' ? 1 : 0.8, icon });
-        marker.bindPopup(`<strong>${u.name}</strong><br/>${u.status}`);
-        marker.on('click', () => map.flyTo([u.lat, u.lng], 15));
+        marker.bindPopup(bodycam.el, { autoClose: false, closeOnClick: false, closeButton: true });
+        marker.on('popupopen', () => {
+          bodycam.attachCamera();
+          const vid = bodycam.el.querySelector('video');
+          if (vid) vid.play().catch(() => {});
+        });
+        marker.on('click', () => {
+          map.flyTo([u.lat, u.lng], 15);
+          marker.openPopup();
+        });
         marker.addTo(map);
         unitMarkers.current[u.id] = marker;
       });

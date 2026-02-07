@@ -28,6 +28,8 @@ export default function Map3DView({
   const lineLayerId = 'dispatch-lines';
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
+  const standbyStreamRef = useRef(null);
+  const unitPopupCache = useRef({});
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -44,6 +46,9 @@ export default function Map3DView({
         pitch: 60,
         bearing: 25,
         attributionControl: false,
+        antialias: false, // better perf
+        collectResourceTiming: false,
+        fadeDuration: 200,
       });
     } catch (err) {
       console.warn('Failed to initialize Mapbox', err);
@@ -180,7 +185,8 @@ export default function Map3DView({
       markerObjects.current = {};
       Object.values(unitObjects.current).forEach((mk) => mk.remove());
       unitObjects.current = {};
-      zoneLayers.current = false;
+      unitPopupCache.current = {};
+      zoneLayers.current = {};
       mapLoaded.current = false;
       map.remove();
       mapInstance.current = null;
@@ -240,11 +246,18 @@ export default function Map3DView({
         default: return 30;
       }
     };
+    const riskColor = (risk) => {
+      switch ((risk || '').toLowerCase()) {
+        case 'low': return '#facc15';   // yellow
+        case 'medium': return '#fb923c'; // orange
+        default: return '#ef4444';      // red for high/critical
+      }
+    };
     const featureCollection = {
       type: 'FeatureCollection',
       features: crimeZones.map((c) => ({
         type: 'Feature',
-        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk) },
+        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk), riskColor: riskColor(c.risk) },
         geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
       })),
     };
@@ -265,8 +278,8 @@ export default function Map3DView({
       source: sourceId,
       paint: {
         'circle-radius': ['get', 'riskRadius'],
-        'circle-color': '#ff4d4d',
-        'circle-stroke-color': '#b30000',
+        'circle-color': ['get', 'riskColor'],
+        'circle-stroke-color': '#111827',
         'circle-stroke-width': 1.5,
         'circle-opacity': 0.55,
       },
@@ -278,7 +291,7 @@ export default function Map3DView({
       source: sourceId,
       paint: {
         'circle-radius': ['*', ['get', 'riskRadius'], 2.2],
-        'circle-color': '#ff2d2d',
+        'circle-color': ['get', 'riskColor'],
         'circle-opacity': 0.12,
       },
     });
@@ -307,21 +320,19 @@ export default function Map3DView({
     });
 
     // animation
-    if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
-    const animate = () => {
-      const t = Date.now() / 500;
-      const scale = 1 + 0.35 * Math.sin(t);
+    if (pulseTimer.current) clearInterval(pulseTimer.current);
+    pulseTimer.current = setInterval(() => {
+      const t = Date.now() / 600;
+      const scale = 1 + 0.28 * Math.sin(t);
       if (map.getLayer(pulseId)) {
         map.setPaintProperty(pulseId, 'circle-radius', ['*', ['get', 'riskRadius'], 2.2 * scale]);
-        map.setPaintProperty(pulseId, 'circle-opacity', 0.05 + 0.1 * (0.5 + 0.5 * Math.sin(t)));
+        map.setPaintProperty(pulseId, 'circle-opacity', 0.05 + 0.08 * (0.5 + 0.5 * Math.sin(t)));
       }
-      pulseTimer.current = requestAnimationFrame(animate);
-    };
-    animate();
+    }, 160);
 
     zoneLayers.current = true;
     return () => {
-      if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
+      if (pulseTimer.current) clearInterval(pulseTimer.current);
     };
   }, [crimeZones, onSelectCrime, mapReady]);
 
@@ -335,14 +346,85 @@ export default function Map3DView({
         delete unitObjects.current[id];
       }
     });
+    const buildBodycamPopup = (unit) => {
+      const wrap = document.createElement('div');
+      wrap.style.width = '220px';
+      wrap.innerHTML = `<strong>${unit.name}</strong><br/><span style="color:#9fb3d1;">${unit.status}</span>`;
+      const frame = document.createElement('div');
+      frame.style.marginTop = '6px';
+      frame.style.borderRadius = '8px';
+      frame.style.overflow = 'hidden';
+      frame.style.border = '1px solid #0d1627';
+      frame.style.boxShadow = '0 6px 16px rgba(0,0,0,0.35)';
+      const video = document.createElement('video');
+      video.width = 220;
+      video.height = 124;
+      video.autoplay = true;
+      video.muted = true;
+      video.loop = true;
+      video.playsInline = true;
+      video.style.display = 'block';
+      video.style.objectFit = 'cover';
+      frame.appendChild(video);
+      wrap.appendChild(frame);
+      const caption = document.createElement('div');
+      caption.textContent = 'Bodycam feed';
+      caption.style.fontSize = '10px';
+      caption.style.color = '#72819e';
+      caption.style.marginTop = '4px';
+      wrap.appendChild(caption);
+
+      const attachCamera = () => {
+        if (unit.id === 'u-standby' && navigator.mediaDevices?.getUserMedia) {
+          const tryStream = async () => {
+            try {
+              if (!standbyStreamRef.current) {
+                standbyStreamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+              }
+              video.srcObject = standbyStreamRef.current;
+              await video.play().catch(() => {});
+              caption.textContent = 'Bodycam feed (live)';
+            } catch (err) {
+              video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+              caption.textContent = 'Bodycam feed (demo)';
+            }
+          };
+          tryStream();
+        } else {
+          video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+          caption.textContent = 'Bodycam feed (demo)';
+        }
+      };
+      return { el: wrap, attachCamera };
+    };
+
     units.forEach((u) => {
-      const color = u.status === 'dispatched' ? '#f6c452' : u.status === 'on_scene' ? '#ff6b6b' : '#6ef4c3';
-      if (unitObjects.current[u.id]) {
-        unitObjects.current[u.id].setLngLat([u.lng, u.lat]);
-        const el = unitObjects.current[u.id].getElement();
-        el.style.background = color;
-        el.title = `${u.name} · ${u.status}`;
-        unitObjects.current[u.id].getPopup()?.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
+      const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
+      const halo = u.status === 'dispatched' ? 'rgba(246,196,82,0.25)' : 'rgba(110,244,195,0.25)';
+      const existing = unitObjects.current[u.id];
+      if (!unitPopupCache.current[u.id]) unitPopupCache.current[u.id] = buildBodycamPopup(u);
+      const popupContent = unitPopupCache.current[u.id];
+      // keep text in sync
+      const statusNode = popupContent.el.querySelector('span');
+      if (statusNode) statusNode.textContent = u.status;
+      if (existing) {
+        existing.setLngLat([u.lng, u.lat]);
+        const el = existing.getElement();
+        if (el) {
+          el.style.background = color;
+          el.style.boxShadow = `0 0 0 4px ${halo}`;
+          el.title = `${u.name} · ${u.status}`;
+        }
+        const popup = existing.getPopup();
+        if (popup) {
+          popup.setDOMContent(popupContent.el);
+          popup.off('open', popupContent.attachCamera);
+          popup.on('open', () => {
+            popupContent.attachCamera();
+            const vid = popupContent.el.querySelector('video');
+            if (vid) vid.play().catch(() => {});
+          });
+        }
         return;
       }
       const el = document.createElement('div');
@@ -350,11 +432,18 @@ export default function Map3DView({
       el.style.height = '16px';
       el.style.borderRadius = '4px';
       el.style.background = color;
-      el.style.boxShadow = '0 0 0 4px rgba(110,244,195,0.25)';
+      el.style.boxShadow = `0 0 0 4px ${halo}`;
       el.title = `${u.name} · ${u.status}`;
+      const popup = new mapboxgl.Popup({ offset: 10, closeOnClick: false, closeButton: true });
+      popup.setDOMContent(popupContent.el);
+      popup.on('open', () => {
+        popupContent.attachCamera();
+        const vid = popupContent.el.querySelector('video');
+        if (vid) vid.play().catch(() => {});
+      });
       const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([u.lng, u.lat])
-        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`<strong>${u.name}</strong><br/>${u.status}`))
+        .setPopup(popup)
         .addTo(map);
       unitObjects.current[u.id] = mk;
     });

@@ -15,19 +15,27 @@ export default function App() {
   const [searchError, setSearchError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [crimeZones, setCrimeZones] = useState([
-    { id: 'cz-01', name: 'Forbes & Morewood Robbery', lat: 40.4427, lng: -79.9425, severity: 'high', radius: 220, reported: '02:10', risk: 'critical' },
-    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18', risk: 'medium' },
+    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4431, lng: -79.9425, severity: 'medium', radius: 500, reported: '02:18', risk: 'medium' },
     { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26', risk: 'high' },
     { id: 'cz-04', name: 'Downtown Market Theft', lat: 40.4411, lng: -79.9965, severity: 'medium', radius: 200, reported: '02:35', risk: 'medium' },
-    { id: 'cz-05', name: 'Strip District Burglary', lat: 40.4522, lng: -79.9815, severity: 'high', radius: 210, reported: '02:42', risk: 'high' },
-    { id: 'cz-06', name: 'South Side Disturbance', lat: 40.4282, lng: -79.9855, severity: 'low', radius: 170, reported: '02:50', risk: 'low' },
-    { id: 'cz-07', name: 'Shadyside Vandalism', lat: 40.4548, lng: -79.9355, severity: 'medium', radius: 190, reported: '03:01', risk: 'medium' },
+    // Spread-out zones
+    { id: 'cz-05', name: 'East Liberty Assault', lat: 40.4635, lng: -79.9260, severity: 'high', radius: 210, reported: '02:42', risk: 'high' },
+    { id: 'cz-06', name: 'Oakland Traffic Incident', lat: 40.4475, lng: -79.9555, severity: 'medium', radius: 180, reported: '02:50', risk: 'medium' },
+    { id: 'cz-07', name: 'South Side Disturbance', lat: 40.4265, lng: -79.9868, severity: 'low', radius: 170, reported: '03:01', risk: 'low' },
+    { id: 'cz-08', name: 'Shadyside Vandalism', lat: 40.4548, lng: -79.9355, severity: 'medium', radius: 190, reported: '03:07', risk: 'medium' },
+    { id: 'cz-09', name: 'Bloomfield Burglary', lat: 40.4592, lng: -79.9498, severity: 'high', radius: 205, reported: '03:14', risk: 'high' },
+    { id: 'cz-10', name: 'Lawrenceville Theft', lat: 40.4715, lng: -79.9605, severity: 'medium', radius: 185, reported: '03:20', risk: 'medium' },
+    { id: 'cz-11', name: 'Greenfield Noise Complaint', lat: 40.4269, lng: -79.9398, severity: 'low', radius: 160, reported: '03:28', risk: 'low' },
+    { id: 'cz-12', name: 'Mt. Washington Alarm', lat: 40.4316, lng: -80.0140, severity: 'medium', radius: 175, reported: '03:35', risk: 'medium' },
   ]);
   const [units, setUnits] = useState([
-    { id: 'u-11', name: 'Unit A1', lat: 40.4385, lng: -79.992, status: 'available' },
-    { id: 'u-12', name: 'Unit B4', lat: 40.446, lng: -79.955, status: 'available' },
-    { id: 'u-13', name: 'Bike Squad 2', lat: 40.4422, lng: -79.982, status: 'available' },
-    { id: 'u-14', name: 'K9-7', lat: 40.4308, lng: -79.999, status: 'standby' },
+    { id: 'u-11', name: 'Unit A1', lat: 40.4360, lng: -79.9950, status: 'available' },
+    { id: 'u-12', name: 'Unit B4', lat: 40.4525, lng: -79.9600, status: 'available' },
+    { id: 'u-13', name: 'Bike Squad 2', lat: 40.4485, lng: -79.9780, status: 'available' },
+    { id: 'u-14', name: 'K9-7', lat: 40.4255, lng: -79.9900, status: 'standby' },
+    { id: 'u-15', name: 'Traffic 5', lat: 40.4700, lng: -79.9400, status: 'available' },
+    { id: 'u-16', name: 'Unit C3', lat: 40.4335, lng: -79.9700, status: 'available' },
+    { id: 'u-17', name: 'Bike Squad 4', lat: 40.4580, lng: -79.9185, status: 'available' },
   ]);
   const [dispatches, setDispatches] = useState([]);
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
@@ -38,6 +46,27 @@ export default function App() {
     setMap3dOk(false);
     setMode('2d');
   }, []);
+
+  // Inject a standby unit at the user's current location when available
+  useEffect(() => {
+    if (!myLocation) return;
+    setUnits((prev) => {
+      const exists = prev.find((u) => u.id === 'u-standby');
+      if (exists) {
+        return prev.map((u) => (u.id === 'u-standby' ? { ...u, lat: myLocation.lat, lng: myLocation.lng } : u));
+      }
+      return [
+        ...prev,
+        {
+          id: 'u-standby',
+          name: 'Officer Leon',
+          lat: myLocation.lat,
+          lng: myLocation.lng,
+          status: 'available',
+        },
+      ];
+    });
+  }, [myLocation]);
 
   const addMarker = useCallback((marker) => {
     setMarkers((prev) => [...prev, marker]);
@@ -264,13 +293,38 @@ export default function App() {
   };
 
   const updateDispatchStatus = (dispatchId, status) => {
-    setDispatches((d) => d.map((x) => (x.id === dispatchId ? { ...x, status } : x)));
+    setDispatches((d) => {
+      const dispatch = d.find((x) => x.id === dispatchId);
+      if (!dispatch) return d;
+      // cancel/clear -> remove dispatch and free unit
+      if (['cleared', 'cancelled', 'cancel', 'clear'].includes(status)) {
+        setUnits((u) =>
+          u.map((unit) => (unit.id === dispatch.unitId ? { ...unit, status: 'available' } : unit))
+        );
+        return d.filter((x) => x.id !== dispatchId);
+      }
+      // arrived -> mark arrived and set unit on_scene
+      if (status === 'arrived' || status === 'on_scene') {
+        setUnits((u) =>
+          u.map((unit) => (unit.id === dispatch.unitId ? { ...unit, status: 'on_scene' } : unit))
+        );
+        return d.map((x) => (x.id === dispatchId ? { ...x, status: 'arrived', progress: 1 } : x));
+      }
+      // en_route / dispatched fallback
+      if (status === 'en_route' || status === 'dispatched') {
+        setUnits((u) =>
+          u.map((unit) => (unit.id === dispatch.unitId ? { ...unit, status: 'dispatched' } : unit))
+        );
+        return d.map((x) => (x.id === dispatchId ? { ...x, status } : x));
+      }
+      return d;
+    });
   };
 
   // move dispatched units toward their crime target (follow road route if available)
   useEffect(() => {
     const stepMs = 1000;
-    const speed = 15; // m/s cruiser
+    const speed = 25; // m/s cruiser (~56 mph) faster response
     const pointAlong = (coords, progress) => {
       if (!coords || coords.length < 2) return null;
       const segLens = [];
