@@ -1,0 +1,500 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Orion - Wildfire Operations Dashboard</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #0a0a0a 0%, #1a0a00 100%);
+            color: #ffffff;
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        .slides-container {
+            position: relative;
+            width: 100%;
+            height: 100vh;
+        }
+
+        .slide {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            opacity: 0;
+            transform: translateX(100%);
+            transition: all 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 80px;
+        }
+
+        .slide.active {
+            opacity: 1;
+            transform: translateX(0);
+        }
+
+        .slide.prev {
+            transform: translateX(-100%);
+        }
+
+        /* Slide 1: The Crisis */
+        .slide-1 {
+            background: linear-gradient(135deg, #ff4444 0%, #ff8800 100%);
+        }
+
+        .slide-1 .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 40px;
+            margin-top: 60px;
+            width: 100%;
+            max-width: 1200px;
+        }
+
+        .stat-card {
+            background: rgba(0, 0, 0, 0.3);
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(255, 255, 255, 0.2);
+            border-radius: 20px;
+            padding: 40px;
+            text-align: center;
+            animation: fadeInUp 0.8s ease-out forwards;
+            opacity: 0;
+        }
+
+        .stat-card:nth-child(1) { animation-delay: 0.2s; }
+        .stat-card:nth-child(2) { animation-delay: 0.4s; }
+        .stat-card:nth-child(3) { animation-delay: 0.6s; }
+
+        .stat-number {
+            font-size: 72px;
+            font-weight: 800;
+            margin-bottom: 10px;
+            text-shadow: 0 0 30px rgba(255, 255, 255, 0.5);
+        }
+
+        .stat-label {
+            font-size: 20px;
+            opacity: 0.9;
+            line-height: 1.4;
+        }
+
+        /* Slide 2: The Problem */
+        .slide-2 {
+            background: linear-gradient(135deg, #1a1a1a 0%, #2a0a0a 100%);
+        }
+
+        .problem-container {
+            max-width: 1000px;
+            text-align: left;
+        }
+
+        .problem-item {
+            display: flex;
+            align-items: center;
+            gap: 30px;
+            margin: 30px 0;
+            padding: 30px;
+            background: rgba(255, 68, 68, 0.1);
+            border-left: 5px solid #ff4444;
+            border-radius: 10px;
+            animation: slideInLeft 0.6s ease-out forwards;
+            opacity: 0;
+        }
+
+        .problem-item:nth-child(1) { animation-delay: 0.2s; }
+        .problem-item:nth-child(2) { animation-delay: 0.4s; }
+        .problem-item:nth-child(3) { animation-delay: 0.6s; }
+
+        .problem-icon {
+            font-size: 48px;
+            min-width: 60px;
+        }
+
+        .problem-text {
+            font-size: 24px;
+            line-height: 1.5;
+        }
+
+        /* Slide 3: The Solution */
+        .slide-3 {
+            background: linear-gradient(135deg, #0a1a2a 0%, #1a3a5a 100%);
+        }
+
+        .solution-container {
+            max-width: 1400px;
+            width: 100%;
+        }
+
+        .solution-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 30px;
+            margin-top: 60px;
+        }
+
+        .feature-card {
+            background: rgba(0, 194, 255, 0.1);
+            backdrop-filter: blur(20px);
+            border: 2px solid rgba(0, 194, 255, 0.3);
+            border-radius: 15px;
+            padding: 35px;
+            animation: zoomIn 0.6s ease-out forwards;
+            opacity: 0;
+        }
+
+        .feature-card:nth-child(1) { animation-delay: 0.2s; }
+        .feature-card:nth-child(2) { animation-delay: 0.3s; }
+        .feature-card:nth-child(3) { animation-delay: 0.4s; }
+        .feature-card:nth-child(4) { animation-delay: 0.5s; }
+
+        .feature-header {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .feature-icon {
+            font-size: 36px;
+        }
+
+        .feature-title {
+            font-size: 24px;
+            font-weight: 700;
+            color: #00c2ff;
+        }
+
+        .feature-description {
+            font-size: 18px;
+            opacity: 0.9;
+            line-height: 1.5;
+        }
+
+        /* Common Elements */
+        .slide-title {
+            font-size: 64px;
+            font-weight: 800;
+            margin-bottom: 20px;
+            text-align: center;
+            text-shadow: 0 0 40px rgba(255, 255, 255, 0.3);
+        }
+
+        .slide-subtitle {
+            font-size: 28px;
+            opacity: 0.9;
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .logo {
+            position: absolute;
+            top: 40px;
+            left: 60px;
+            font-size: 36px;
+            font-weight: 800;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .logo-icon {
+            font-size: 48px;
+        }
+
+        /* Navigation */
+        .nav-controls {
+            position: fixed;
+            bottom: 40px;
+            right: 60px;
+            display: flex;
+            gap: 20px;
+            z-index: 1000;
+        }
+
+        .nav-btn {
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            font-size: 24px;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .nav-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: scale(1.1);
+        }
+
+        .nav-btn:disabled {
+            opacity: 0.3;
+            cursor: not-allowed;
+        }
+
+        .slide-indicator {
+            position: fixed;
+            bottom: 40px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 15px;
+        }
+
+        .dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transition: all 0.3s ease;
+        }
+
+        .dot.active {
+            background: #00c2ff;
+            width: 40px;
+            border-radius: 6px;
+        }
+
+        /* Animations */
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(30px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideInLeft {
+            from {
+                opacity: 0;
+                transform: translateX(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateX(0);
+            }
+        }
+
+        @keyframes zoomIn {
+            from {
+                opacity: 0;
+                transform: scale(0.9);
+            }
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                transform: scale(1);
+            }
+            50% {
+                transform: scale(1.05);
+            }
+        }
+
+        .flame-animation {
+            animation: pulse 2s ease-in-out infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="logo">
+        <span class="logo-icon flame-animation">🔥</span>
+        <span>ORION</span>
+    </div>
+
+    <div class="slides-container">
+        <!-- Slide 1: The Crisis -->
+        <div class="slide slide-1 active">
+            <h1 class="slide-title">California is Burning</h1>
+            <p class="slide-subtitle">The wildfire crisis affecting millions</p>
+            
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-number">81%</div>
+                    <div class="stat-label">of Californians impacted<br>26M+ people</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">7,500+</div>
+                    <div class="stat-label">fires in 2025<br>already this year</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-number">500K</div>
+                    <div class="stat-label">acres burned<br>and counting</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 2: The Problem -->
+        <div class="slide slide-2">
+            <h1 class="slide-title">Emergency Responders Are Fighting Blind</h1>
+            <p class="slide-subtitle">Critical challenges costing precious time</p>
+            
+            <div class="problem-container">
+                <div class="problem-item">
+                    <div class="problem-icon">📊</div>
+                    <div class="problem-text">
+                        <strong>Fragmented Data:</strong> Information scattered across multiple systems, no unified view of active fires
+                    </div>
+                </div>
+                <div class="problem-item">
+                    <div class="problem-icon">⏱️</div>
+                    <div class="problem-text">
+                        <strong>Slow Coordination:</strong> Manual processes delay resource deployment and evacuation decisions
+                    </div>
+                </div>
+                <div class="problem-item">
+                    <div class="problem-icon">📞</div>
+                    <div class="problem-text">
+                        <strong>Communication Delays:</strong> Phone calls and radio chatter lead to miscommunication and wasted time
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: The Solution -->
+        <div class="slide slide-3">
+            <h1 class="slide-title">Introducing Orion</h1>
+            <p class="slide-subtitle">AI-Powered Wildfire Command Center</p>
+            
+            <div class="solution-container">
+                <div class="solution-grid">
+                    <div class="feature-card">
+                        <div class="feature-header">
+                            <span class="feature-icon">🗺️</span>
+                            <span class="feature-title">Real-Time Intelligence</span>
+                        </div>
+                        <p class="feature-description">
+                            Live 3D visualization of all active fires with AI-powered spread prediction and environmental monitoring
+                        </p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-header">
+                            <span class="feature-icon">🤖</span>
+                            <span class="feature-title">Autonomous AI Agents</span>
+                        </div>
+                        <p class="feature-description">
+                            Background agents monitor fires 24/7, optimize evacuation routes, and recommend resource deployment
+                        </p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-header">
+                            <span class="feature-icon">🗣️</span>
+                            <span class="feature-title">Voice Operations</span>
+                        </div>
+                        <p class="feature-description">
+                            Hands-free incident management with conversational AI for rapid response in high-pressure situations
+                        </p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-header">
+                            <span class="feature-icon">🚨</span>
+                            <span class="feature-title">Instant Alerts</span>
+                        </div>
+                        <p class="feature-description">
+                            Automated multi-channel emergency alerts via SMS and Telegram with live video intelligence
+                        </p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Navigation -->
+    <div class="slide-indicator">
+        <div class="dot active"></div>
+        <div class="dot"></div>
+        <div class="dot"></div>
+    </div>
+
+    <div class="nav-controls">
+        <button class="nav-btn" id="prevBtn" disabled>←</button>
+        <button class="nav-btn" id="nextBtn">→</button>
+    </div>
+
+    <script>
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.slide');
+        const dots = document.querySelectorAll('.dot');
+        const prevBtn = document.getElementById('prevBtn');
+        const nextBtn = document.getElementById('nextBtn');
+        const totalSlides = slides.length;
+
+        function updateSlides() {
+            slides.forEach((slide, index) => {
+                slide.classList.remove('active', 'prev');
+                if (index === currentSlide) {
+                    slide.classList.add('active');
+                } else if (index < currentSlide) {
+                    slide.classList.add('prev');
+                }
+            });
+
+            dots.forEach((dot, index) => {
+                dot.classList.toggle('active', index === currentSlide);
+            });
+
+            prevBtn.disabled = currentSlide === 0;
+            nextBtn.disabled = currentSlide === totalSlides - 1;
+        }
+
+        function nextSlide() {
+            if (currentSlide < totalSlides - 1) {
+                currentSlide++;
+                updateSlides();
+            }
+        }
+
+        function prevSlide() {
+            if (currentSlide > 0) {
+                currentSlide--;
+                updateSlides();
+            }
+        }
+
+        nextBtn.addEventListener('click', nextSlide);
+        prevBtn.addEventListener('click', prevSlide);
+
+        // Keyboard navigation
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'ArrowRight') nextSlide();
+            if (e.key === 'ArrowLeft') prevSlide();
+        });
+
+        // Click on dots
+        dots.forEach((dot, index) => {
+            dot.addEventListener('click', () => {
+                currentSlide = index;
+                updateSlides();
+            });
+        });
+
+        updateSlides();
+    </script>
+</body>
+</html>
