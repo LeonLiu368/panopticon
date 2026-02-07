@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import LeafletView from './components/LeafletView';
 import Map3DView from './components/Map3DView';
 import DispatchPanel from './components/DispatchPanel';
 import TranscriptRecorder from './components/TranscriptRecorder';
+import AIRecommendation from './components/AIRecommendation';
+import IncidentReport from './components/IncidentReport';
 import { haversineDistance, formatDuration } from './utils/geo';
+import { analyzeBodycamFrame, syncState, generateIncidentReport } from './services/api';
 import bodycamVideoSrc from '../media/StockBodycam.mp4';
 
 export default function App() {
@@ -58,6 +61,17 @@ export default function App() {
     y: window.innerHeight - 304,
   }));
   const [panelSize, setPanelSize] = useState({ w: 340, h: 280 });
+
+  // AI state
+  const [aiEnabled, setAIEnabled] = useState(true);
+  const [aiLastResponse, setAILastResponse] = useState(null);
+  const [aiAnalysis, setAIAnalysis] = useState(null);
+  const [aiAnalyzing, setAIAnalyzing] = useState(false);
+  const [showReport, setShowReport] = useState(false);
+  const [currentReport, setCurrentReport] = useState(null);
+  const [reportLoading, setReportLoading] = useState(false);
+  const bodycamAnalysisRef = useRef(false);
+  const [transcriptEntries, setTranscriptEntries] = useState([]);
 
   const handleMap3dError = useCallback(() => {
     setMap3dOk(false);
@@ -214,9 +228,20 @@ export default function App() {
     await assignDispatch({ type: 'marker', id: markerId }, nearest.id);
   };
 
-  // Voice dispatch: find best matching unit and crime text and dispatch
+  // Voice dispatch: AI provides exact IDs, fallback to bigram matching
   const handleVoiceDispatch = useCallback(
-    async ({ unit: unitText, crime: crimeText }) => {
+    async ({ unit: unitText, crime: crimeText, unitId, targetId, targetType }) => {
+      // AI-provided exact IDs — execute directly
+      if (unitId && targetId) {
+        const type = targetType || 'crime';
+        await assignDispatch({ type, id: targetId }, unitId);
+        if (type === 'crime') {
+          setSelectedTarget({ type: 'crime', id: targetId });
+          setSelectedCrimeId(targetId);
+        }
+        return;
+      }
+      // Fallback to bigram matching
       if (!unitText || !crimeText) return;
       const sim = (a, b) => {
         a = (a || '').toLowerCase(); b = (b || '').toLowerCase();
@@ -235,10 +260,10 @@ export default function App() {
       const bestUnit = units
         .map((u) => ({ u, score: sim(unitText, u.name) + (u.status === 'available' ? 0.2 : 0) }))
         .sort((a, b) => b.score - a.score)[0]?.u;
-    const bestCrime = crimeZones
-      .map((c) => ({ c, score: sim(crimeText, c.name) }))
-      .sort((a, b) => b.score - a.score)[0]?.c;
-    if (!bestUnit || !bestCrime) return;
+      const bestCrime = crimeZones
+        .map((c) => ({ c, score: sim(crimeText, c.name) }))
+        .sort((a, b) => b.score - a.score)[0]?.c;
+      if (!bestUnit || !bestCrime) return;
       await assignDispatch({ type: 'crime', id: bestCrime.id }, bestUnit.id);
       setSelectedTarget({ type: 'crime', id: bestCrime.id });
       setSelectedCrimeId(bestCrime.id);
@@ -488,6 +513,61 @@ export default function App() {
     })
     .filter(Boolean);
 
+  // AI Bodycam analysis — capture frames every 5 seconds when bodycam is open
+  useEffect(() => {
+    if (!bodycamOpen || !aiEnabled) {
+      bodycamAnalysisRef.current = false;
+      return;
+    }
+    const interval = setInterval(async () => {
+      if (bodycamAnalysisRef.current) return; // skip if previous call pending
+      const video = document.querySelector('.bodycam-video');
+      if (!video || video.readyState < 2) return;
+      bodycamAnalysisRef.current = true;
+      setAIAnalyzing(true);
+      try {
+        const canvas = document.createElement('canvas');
+        canvas.width = Math.min(video.videoWidth || 640, 640);
+        canvas.height = Math.min(video.videoHeight || 360, 360);
+        canvas.getContext('2d').drawImage(video, 0, 0, canvas.width, canvas.height);
+        const frame = canvas.toDataURL('image/jpeg', 0.6);
+        const result = await analyzeBodycamFrame(frame, {
+          unit_name: 'Unit B4',
+          crime_zone: 'Shadyside Vandalism',
+        });
+        if (result?.analysis) setAIAnalysis(result.analysis);
+      } catch { /* silent */ }
+      finally {
+        bodycamAnalysisRef.current = false;
+        setAIAnalyzing(false);
+      }
+    }, 5000);
+    return () => clearInterval(interval);
+  }, [bodycamOpen]);
+
+  // Sync state to Flask backend periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncState({ units, crime_zones: crimeZones, dispatches, markers, transcript: transcriptEntries });
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [units, crimeZones, dispatches, markers, transcriptEntries]);
+
+  // Generate incident report
+  const handleGenerateReport = async () => {
+    setReportLoading(true);
+    try {
+      const result = await generateIncidentReport({
+        dispatches, transcript: transcriptEntries, units, crime_zones: crimeZones,
+      });
+      if (result?.report) {
+        setCurrentReport(result.report);
+        setShowReport(true);
+      }
+    } catch { /* silent */ }
+    finally { setReportLoading(false); }
+  };
+
   return (
     <>
     {loading && (
@@ -540,6 +620,12 @@ export default function App() {
               });
             }
           }}>My location</button>
+          <button
+            className={`ghost ai-toggle ${aiEnabled ? 'ai-on' : 'ai-off'}`}
+            onClick={() => setAIEnabled((v) => !v)}
+          >
+            {aiEnabled ? 'AI ON' : 'AI OFF'}
+          </button>
         </div>
       </div>
       <div className="hazard-stripe" />
@@ -608,13 +694,29 @@ export default function App() {
           onSelectUnit={(crimeId, unit) => focusUnit(crimeId, unit)}
           dispatches={dispatches}
           onUpdateDispatch={updateDispatchStatus}
+          onGenerateReport={handleGenerateReport}
+          reportLoading={reportLoading}
         />
       </div>
-      {/* Floating voice FAB */}
+      {/* Floating voice FAB — now AI-powered via Dedalus SDK */}
       <TranscriptRecorder
         onNavigate={handleVoiceNavigate}
         onDispatchCommand={handleVoiceDispatch}
+        onAIResponse={setAILastResponse}
+        units={units}
+        crimeZones={crimeZones}
+        markers={markers}
+        aiEnabled={aiEnabled}
       />
+      {/* AI Recommendation floating panel */}
+      <AIRecommendation
+        response={aiLastResponse}
+        onDismiss={() => setAILastResponse(null)}
+      />
+      {/* Incident Report modal */}
+      {showReport && (
+        <IncidentReport report={currentReport} onClose={() => setShowReport(false)} />
+      )}
       {/* Bodycam panel — Unit B4 at Shadyside Vandalism.
            Stays mounted (video keeps playing) while bodycamActive;
            hidden visually when the user closes the panel. */}
@@ -642,8 +744,26 @@ export default function App() {
             <span>Unit B4 — Bodycam Feed</span>
             <button className="ghost" onClick={() => setBodycamOpen(false)}>X</button>
           </div>
-          <video src={bodycamVideoSrc} autoPlay loop muted playsInline className="bodycam-video" />
-          <div className="small">Shadyside Vandalism · Live feed</div>
+          <div style={{ position: 'relative' }}>
+            <video src={bodycamVideoSrc} autoPlay loop muted playsInline className="bodycam-video" />
+            {(aiAnalysis || aiAnalyzing) && (
+              <div className="bodycam-ai-overlay">
+                {aiAnalyzing && !aiAnalysis && <div className="bodycam-ai-loading">AI Analyzing...</div>}
+                {aiAnalysis && (
+                  <>
+                    <div className={`bodycam-ai-threat ${aiAnalysis.threat_level}`}>
+                      THREAT: {(aiAnalysis.threat_level || 'unknown').toUpperCase()}
+                    </div>
+                    <div className="bodycam-ai-count">{aiAnalysis.person_count} person(s) detected</div>
+                    {aiAnalysis.observations?.slice(0, 3).map((obs, i) => (
+                      <div key={i} className="bodycam-ai-obs">- {obs}</div>
+                    ))}
+                  </>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="small">Shadyside Vandalism · Live feed {aiAnalysis ? '· AI Active' : ''}</div>
           <div
             className="bodycam-resize-handle"
             onMouseDown={(e) => {

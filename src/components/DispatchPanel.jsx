@@ -13,6 +13,8 @@ export default function DispatchPanel({
   onAssign,
   dispatches,
   onUpdateDispatch,
+  onGenerateReport,
+  reportLoading,
 }) {
   const quickStats = useMemo(
     () => [
@@ -87,7 +89,14 @@ export default function DispatchPanel({
       <div style={{ marginTop: 12 }}>
         <div className="section-title">
           <strong>Dispatch board</strong>
-          <span className="small">Manage active tasks</span>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span className="small">Manage active tasks</span>
+            {onGenerateReport && (
+              <button className="primary" onClick={onGenerateReport} disabled={reportLoading} style={{ fontSize: '0.7rem', padding: '3px 10px' }}>
+                {reportLoading ? 'Generating...' : 'AI Report'}
+              </button>
+            )}
+          </div>
         </div>
         <div className="marker-list">
           {dispatches.map((d) => {
