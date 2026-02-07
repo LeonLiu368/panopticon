@@ -337,13 +337,26 @@ export default function Map3DView({
       }
     });
     units.forEach((u) => {
-      if (unitObjects.current[u.id]) return;
+      const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
+      const halo = u.status === 'dispatched' ? 'rgba(246,196,82,0.25)' : 'rgba(110,244,195,0.25)';
+      const existing = unitObjects.current[u.id];
+      if (existing) {
+        existing.setLngLat([u.lng, u.lat]);
+        const el = existing.getElement();
+        if (el) {
+          el.style.background = color;
+          el.style.boxShadow = `0 0 0 4px ${halo}`;
+          el.title = `${u.name} · ${u.status}`;
+        }
+        existing.getPopup()?.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
+        return;
+      }
       const el = document.createElement('div');
       el.style.width = '16px';
       el.style.height = '16px';
       el.style.borderRadius = '4px';
-      el.style.background = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
-      el.style.boxShadow = '0 0 0 4px rgba(110,244,195,0.25)';
+      el.style.background = color;
+      el.style.boxShadow = `0 0 0 4px ${halo}`;
       el.title = `${u.name} · ${u.status}`;
       const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([u.lng, u.lat])

@@ -312,7 +312,7 @@ export default function LeafletView({
   // Unit markers / checkpoints
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
+    if (!map || !mapReady) return;
     const sync = async () => {
       const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
       Object.keys(unitMarkers.current).forEach((id) => {
@@ -326,12 +326,20 @@ export default function LeafletView({
         }
       });
       units.forEach((u) => {
-        if (unitMarkers.current[u.id]) return;
+        const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
         const icon = L.divIcon({
           className: 'unit-marker',
-          html: `<div style="width:14px;height:14px;border-radius:4px;background:${u.status === 'dispatched' ? '#f6c452' : '#6ef4c3'};border:2px solid #0d1627;"></div>`,
+          html: `<div style="width:14px;height:14px;border-radius:4px;background:${color};border:2px solid #0d1627;"></div>`,
           iconAnchor: [7, 7],
         });
+        const existing = unitMarkers.current[u.id];
+        if (existing) {
+          existing.setLatLng([u.lat, u.lng]);
+          existing.setOpacity(u.status === 'available' ? 1 : 0.8);
+          existing.setIcon(icon);
+          existing.setPopupContent(`<strong>${u.name}</strong><br/>${u.status}`);
+          return;
+        }
         const marker = L.marker([u.lat, u.lng], { title: u.name, opacity: u.status === 'available' ? 1 : 0.8, icon });
         marker.bindPopup(`<strong>${u.name}</strong><br/>${u.status}`);
         marker.on('click', () => map.flyTo([u.lat, u.lng], 15));
