@@ -14,6 +14,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   const pulseTimer = useRef(null);
   const mapLoaded = useRef(false);
   const [mapReady, setMapReady] = useState(false);
+  const activeInputRef = useRef(null);
   const lineLayerId = 'dispatch-lines';
 
   useEffect(() => {
@@ -82,7 +83,9 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
 
     map.on('click', (e) => {
-      // simple on-map input via prompt-like div near cursor
+      // remove existing inputs
+      document.querySelectorAll('.mapbox-checkpoint-input').forEach((el) => el.remove());
+      activeInputRef.current = null;
       const input = document.createElement('input');
       input.type = 'text';
       input.placeholder = 'Checkpoint label';
@@ -99,8 +102,19 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
         left: `${e.point.x}px`,
         top: `${e.point.y}px`,
       });
+      input.className = 'mapbox-checkpoint-input';
       mapRef.current.parentElement.appendChild(input);
       input.focus();
+      activeInputRef.current = input;
+      const cleanup = () => {
+        input.remove();
+        activeInputRef.current = null;
+        document.removeEventListener('mousedown', outsideClose, true);
+      };
+      const outsideClose = (evt) => {
+        if (evt.target !== input) cleanup();
+      };
+      document.addEventListener('mousedown', outsideClose, true);
       input.onkeydown = (ev) => {
         if (ev.key === 'Enter') {
           const markerData = {
@@ -110,10 +124,10 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
             label: input.value || 'Checkpoint',
             priority: 'medium',
           };
-          input.remove();
+          cleanup();
           onAddMarker?.(markerData);
         } else if (ev.key === 'Escape') {
-          input.remove();
+          cleanup();
         }
       };
     });
@@ -178,11 +192,19 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     const pulseId = 'crime-zones-pulse';
     const labelId = 'crime-zones-labels';
 
+    const riskRadius = (risk) => {
+      switch ((risk || '').toLowerCase()) {
+        case 'critical': return 52;
+        case 'high': return 44;
+        case 'medium': return 36;
+        default: return 30;
+      }
+    };
     const featureCollection = {
       type: 'FeatureCollection',
       features: crimeZones.map((c) => ({
         type: 'Feature',
-        properties: { ...c, name: c.name || c.id },
+        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk) },
         geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
       })),
     };
@@ -202,7 +224,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       type: 'circle',
       source: sourceId,
       paint: {
-        'circle-radius': 16,
+        'circle-radius': ['get', 'riskRadius'],
         'circle-color': '#ff4d4d',
         'circle-stroke-color': '#b30000',
         'circle-stroke-width': 1.5,
@@ -215,7 +237,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       type: 'circle',
       source: sourceId,
       paint: {
-        'circle-radius': 36,
+        'circle-radius': ['*', ['get', 'riskRadius'], 2.2],
         'circle-color': '#ff2d2d',
         'circle-opacity': 0.12,
       },
@@ -250,7 +272,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       const t = Date.now() / 500;
       const scale = 1 + 0.35 * Math.sin(t);
       if (map.getLayer(pulseId)) {
-        map.setPaintProperty(pulseId, 'circle-radius', 36 * scale);
+        map.setPaintProperty(pulseId, 'circle-radius', ['*', ['get', 'riskRadius'], 2.2 * scale]);
         map.setPaintProperty(pulseId, 'circle-opacity', 0.05 + 0.1 * (0.5 + 0.5 * Math.sin(t)));
       }
       pulseTimer.current = requestAnimationFrame(animate);

@@ -16,9 +16,9 @@ export default function App() {
   const [searchError, setSearchError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [crimeZones, setCrimeZones] = useState([
-    { id: 'cz-01', name: 'Forbes & Morewood Robbery', lat: 40.4427, lng: -79.9425, severity: 'high', radius: 220, reported: '02:10' },
-    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18' },
-    { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26' },
+    { id: 'cz-01', name: 'Forbes & Morewood Robbery', lat: 40.4427, lng: -79.9425, severity: 'high', radius: 220, reported: '02:10', risk: 'critical' },
+    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18', risk: 'medium' },
+    { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26', risk: 'high' },
   ]);
   const [units, setUnits] = useState([
     { id: 'u-11', name: 'Unit A1', lat: 40.4385, lng: -79.992, status: 'available' },
@@ -135,6 +135,38 @@ export default function App() {
     const crime = crimeZones.find((c) => c.id === crimeId) || loc;
     if (!crime) return;
     setSelected({ lat: crime.lat, lng: crime.lng });
+  };
+
+  // Voice navigation handler
+  const handleVoiceNavigate = (target) => {
+    if (!target) return;
+    const text = target.toLowerCase().trim();
+    // Try exact name match in crimes
+    const crimeMatch = crimeZones.find((c) => (c.name || '').toLowerCase().includes(text));
+    if (crimeMatch) {
+      setSelectedCrimeId(crimeMatch.id);
+      setSelected({ lat: crimeMatch.lat, lng: crimeMatch.lng });
+      return;
+    }
+    // Try units
+    const unitMatch = units.find((u) => (u.name || '').toLowerCase().includes(text));
+    if (unitMatch) {
+      setSelected({ lat: unitMatch.lat, lng: unitMatch.lng });
+      return;
+    }
+    // Try coordinates "lat, lng"
+    const coordMatch = text.match(/(-?\\d+\\.\\d+)\\s*,\\s*(-?\\d+\\.\\d+)/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      setSelected({ lat, lng });
+      return;
+    }
+    // Try checkpoint markers
+    const markerMatch = markers.find((m) => (m.label || '').toLowerCase().includes(text));
+    if (markerMatch) {
+      setSelected({ lat: markerMatch.lat, lng: markerMatch.lng });
+    }
   };
 
   const updateDispatchStatus = (dispatchId, status) => {
@@ -385,7 +417,7 @@ export default function App() {
           dispatches={dispatches}
           onUpdateDispatch={updateDispatchStatus}
         />
-        <TranscriptRecorder />
+        <TranscriptRecorder onNavigate={handleVoiceNavigate} />
       </div>
     </div>
   );

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Browser SpeechRecognition is fast and free; falls back to manual note entry.
-export default function TranscriptRecorder() {
+export default function TranscriptRecorder({ onNavigate }) {
   const recognitionRef = useRef(null);
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
@@ -41,9 +41,19 @@ export default function TranscriptRecorder() {
     }
   };
 
+  const handleCommand = (text) => {
+    const lower = text.toLowerCase();
+    const match = lower.match(/navigate to (.+)/);
+    if (match && onNavigate) {
+      const target = match[1].trim();
+      onNavigate(target);
+    }
+  };
+
   const saveEntry = () => {
     if (!transcript) return;
     setEntries((e) => [{ id: crypto.randomUUID(), text: transcript, at: new Date() }, ...e]);
+    handleCommand(transcript);
     setTranscript('');
     setListening(false);
     recognitionRef.current?.stop();

@@ -25,6 +25,16 @@ export default function LeafletView({
   const crimePulseTimers = useRef({});
   const unitMarkers = useRef({});
   const lineLayer = useRef(null);
+  const heatGroup = useRef(null);
+  const activeInputRef = useRef(null);
+
+  // Helper: load Leaflet and return L
+  const loadLeaflet = async () => {
+    const Lmod = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
+    const L = window.L || Lmod.default || Lmod;
+    window.L = L;
+    return L;
+  };
 
   useEffect(() => {
     let isMounted = true;
@@ -38,7 +48,7 @@ export default function LeafletView({
         link.href = 'https://unpkg.com/leaflet@1.9.4/dist/leaflet.css';
         document.head.appendChild(link);
       }
-      const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
+      const L = await loadLeaflet();
       if (!isMounted) return;
       const map = L.map(mapRef.current, {
         center: [40.4433, -79.9436], // CMU area
@@ -60,6 +70,9 @@ export default function LeafletView({
         );
       }
       map.on('click', (e) => {
+        // remove any existing inputs
+        document.querySelectorAll('.leaflet-checkpoint-input').forEach((el) => el.remove());
+        activeInputRef.current = null;
         const labelInput = document.createElement('input');
         labelInput.type = 'text';
         labelInput.placeholder = 'Checkpoint label';
@@ -76,12 +89,23 @@ export default function LeafletView({
         labelInput.style.left = `${e.originalEvent.clientX - container.left}px`;
         labelInput.style.top = `${e.originalEvent.clientY - container.top}px`;
         labelInput.style.pointerEvents = 'auto';
+        labelInput.className = 'leaflet-checkpoint-input';
         mapRef.current.appendChild(labelInput);
         labelInput.focus();
+        activeInputRef.current = labelInput;
+        const cleanup = () => {
+          labelInput.remove();
+          activeInputRef.current = null;
+          document.removeEventListener('mousedown', outsideClose, true);
+        };
+        const outsideClose = (evt) => {
+          if (evt.target !== labelInput) cleanup();
+        };
+        document.addEventListener('mousedown', outsideClose, true);
         labelInput.onkeydown = (ev) => {
           if (ev.key === 'Enter') {
             const val = labelInput.value || 'Checkpoint';
-            labelInput.remove();
+            cleanup();
             const markerData = {
               id: crypto.randomUUID(),
               lng: +e.latlng.lng.toFixed(5),
@@ -91,7 +115,7 @@ export default function LeafletView({
             };
             onAddMarker(markerData);
           } else if (ev.key === 'Escape') {
-            labelInput.remove();
+            cleanup();
           }
         };
       });
@@ -113,7 +137,7 @@ export default function LeafletView({
     const map = mapInstance.current;
     if (!map) return;
     const sync = async () => {
-      const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
+      const L = await loadLeaflet();
       Object.keys(markerObjects.current).forEach((id) => {
         if (!markers.find((m) => m.id === id)) {
           markerObjects.current[id].remove();
@@ -141,7 +165,7 @@ export default function LeafletView({
     const map = mapInstance.current;
     if (!map) return;
     const sync = async () => {
-      const L = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
+      const L = await loadLeafletWithHeat();
       // clear removed zones
       Object.keys(crimeLayers.current).forEach((id) => {
         if (!crimeZones.find((c) => c.id === id)) {
@@ -154,13 +178,29 @@ export default function LeafletView({
           }
         }
       });
+      const riskRadius = (risk) => {
+        switch ((risk || '').toLowerCase()) {
+          case 'critical': return (c) => c.radius || 260;
+          case 'high': return (c) => c.radius || 220;
+          case 'medium': return (c) => c.radius || 180;
+          default: return (c) => c.radius || 150;
+        }
+      };
+      const riskWeight = (risk) => {
+        switch ((risk || '').toLowerCase()) {
+          case 'critical': return 1;
+          case 'high': return 0.75;
+          case 'medium': return 0.55;
+          default: return 0.4;
+        }
+      };
       crimeZones.forEach((c) => {
         if (crimeLayers.current[c.id]) {
           // update label if needed
           crimeLayers.current[c.id].bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
           return;
         }
-        const baseRadius = c.radius || 200;
+        const baseRadius = riskRadius(c.risk)(c);
         const inner = L.circleMarker([c.lat, c.lng], {
           radius: 10,
           color: '#ff4d4d',
@@ -189,6 +229,24 @@ export default function LeafletView({
         }, 120);
         crimePulseTimers.current[c.id] = { timer, circle: pulseCircle };
       });
+
+      // Heatmap overlay (manual concentric circles as fallback to plugin)
+      if (heatGroup.current) {
+        heatGroup.current.remove();
+        heatGroup.current = null;
+      }
+      const blobs = crimeZones.map((c) => {
+        const weight = riskWeight(c.risk);
+        const base = riskRadius(c.risk)(c);
+        return [
+          L.circle([c.lat, c.lng], { radius: base * 1.2, color: 'transparent', fillColor: 'rgba(255,150,50,0.25)', fillOpacity: 0.25, weight: 0 }),
+          L.circle([c.lat, c.lng], { radius: base * 1.8, color: 'transparent', fillColor: 'rgba(255,90,30,0.18)', fillOpacity: 0.18 * weight, weight: 0 }),
+          L.circle([c.lat, c.lng], { radius: base * 2.6, color: 'transparent', fillColor: 'rgba(255,0,0,0.12)', fillOpacity: 0.12 * weight, weight: 0 }),
+        ];
+      }).flat();
+      if (blobs.length) {
+        heatGroup.current = L.featureGroup(blobs).addTo(map);
+      }
     };
     sync();
     return () => {
@@ -197,6 +255,10 @@ export default function LeafletView({
         circle.remove();
       });
       crimePulseTimers.current = {};
+      if (heatGroup.current) {
+        heatGroup.current.remove();
+        heatGroup.current = null;
+      }
     };
   }, [crimeZones, onSelectCrime]);
 
@@ -282,9 +344,9 @@ export default function LeafletView({
           <h3 style={{ margin: 0 }}>Leaflet Map</h3>
           <span className="pill">2D · OSM/Tile backend</span>
         </div>
-      <div className="badge">Tiles: {tileUrl.includes('openstreetmap') ? 'OSM' : 'Custom'}</div>
+        <div className="badge">Tiles: {tileUrl.includes('openstreetmap') ? 'OSM' : 'Custom'}</div>
+      </div>
+      <div className="map-wrap" ref={mapRef} />
     </div>
-    <div className="map-wrap" ref={mapRef} />
-  </div>
-);
+  );
 }
