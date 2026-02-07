@@ -43,7 +43,7 @@ export default function TranscriptRecorder({ onNavigate }) {
 
   const handleCommand = (text) => {
     const lower = text.toLowerCase();
-    const match = lower.match(/navigate to (.+)/);
+    const match = lower.match(/(?:navigate|go) to (.+)/);
     if (match && onNavigate) {
       const target = match[1].trim();
       onNavigate(target);
@@ -59,41 +59,35 @@ export default function TranscriptRecorder({ onNavigate }) {
     recognitionRef.current?.stop();
   };
 
+  const expanded = listening || transcript.length > 0;
+
   return (
-    <div className="dashboard-card" style={{ marginTop: 12 }}>
-      <div className="section-title">
-        <strong>Incident Transcript Recorder</strong>
-        {supported ? (
-          <button className={listening ? 'primary' : 'ghost'} onClick={toggle}>
-            {listening ? 'Stop & Save' : 'Start Recording'}
-          </button>
-        ) : (
-          <span className="pill">Speech API unavailable</span>
-        )}
-      </div>
-      {supported && (
-        <>
-          <div className="input-group">
-            <label>Live transcript</label>
-            <textarea rows={3} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
-          </div>
-          <div className="flex" style={{ justifyContent: 'space-between' }}>
-            <div className="small">Uses browser SpeechRecognition (fast & free)</div>
-            <button className="ghost" onClick={saveEntry} disabled={!transcript}>Save note</button>
-          </div>
-        </>
+    <div className={`voice-fab mic ${expanded ? 'expanded' : ''}`}>
+      {supported ? (
+        <button
+          className={`mic-button ${listening ? 'live' : ''}`}
+          onClick={toggle}
+          title="Say: navigate to / go to ..."
+          aria-label="Microphone voice control"
+        >
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 14c1.66 0 3-1.34 3-3V6a3 3 0 1 0-6 0v5c0 1.66 1.34 3 3 3Z" stroke="#e8f4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M6 11v1a6 6 0 0 0 12 0v-1" stroke="#e8f4ff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>
+            <path d="M12 19v3" stroke="#e8f4ff" strokeWidth="2" strokeLinecap="round"/>
+            <path d="M8 22h8" stroke="#e8f4ff" strokeWidth="2" strokeLinecap="round"/>
+          </svg>
+        </button>
+      ) : (
+        <span className="pill">Speech API unavailable</span>
       )}
-      {entries.length > 0 && (
-        <div style={{ marginTop: 10 }}>
-          <div className="small">Saved notes</div>
-          {entries.map((e) => (
-            <div key={e.id} className="marker-item" style={{ marginTop: 6 }}>
-              <div>
-                <strong>{e.at.toLocaleTimeString()}</strong>
-                <div className="small">{e.text}</div>
-              </div>
-            </div>
-          ))}
+      {supported && expanded && (
+        <div className="voice-fab-panel">
+          <div className="small" style={{ marginBottom: 6 }}>Say “navigate to / go to … [crime / unit / location]”</div>
+          <textarea rows={2} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
+          <div className="voice-footer" style={{ marginTop: 6 }}>
+            <div className="small">Routes both maps</div>
+            <button className="ghost" onClick={saveEntry} disabled={!transcript}>Apply</button>
+          </div>
         </div>
       )}
     </div>

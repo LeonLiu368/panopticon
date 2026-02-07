@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 const tileUrl = import.meta.env.VITE_LEAFLET_TILES || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
 const tileAttribution =
@@ -23,10 +23,14 @@ export default function LeafletView({
   const userMarker = useRef(null);
   const crimeLayers = useRef({});
   const crimePulseTimers = useRef({});
+  const crimePins = useRef({});
   const unitMarkers = useRef({});
   const lineLayer = useRef(null);
   const heatGroup = useRef(null);
   const activeInputRef = useRef(null);
+  const keyListenerRef = useRef(null);
+  const lastPointerRef = useRef(null);
+  const [mapReady, setMapReady] = useState(false);
 
   // Helper: load Leaflet and return L
   const loadLeaflet = async () => {
@@ -69,8 +73,7 @@ export default function LeafletView({
           { enableHighAccuracy: true, timeout: 3000, maximumAge: 60000 }
         );
       }
-      map.on('click', (e) => {
-        // remove any existing inputs
+      const spawnInput = (point, latlng) => {
         document.querySelectorAll('.leaflet-checkpoint-input').forEach((el) => el.remove());
         activeInputRef.current = null;
         const labelInput = document.createElement('input');
@@ -85,9 +88,8 @@ export default function LeafletView({
         labelInput.style.color = '#00b4ff';
         labelInput.style.fontSize = '12px';
         labelInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
-        const container = mapRef.current.getBoundingClientRect();
-        labelInput.style.left = `${e.originalEvent.clientX - container.left}px`;
-        labelInput.style.top = `${e.originalEvent.clientY - container.top}px`;
+        labelInput.style.left = `${point.x}px`;
+        labelInput.style.top = `${point.y}px`;
         labelInput.style.pointerEvents = 'auto';
         labelInput.className = 'leaflet-checkpoint-input';
         mapRef.current.appendChild(labelInput);
@@ -108,8 +110,8 @@ export default function LeafletView({
             cleanup();
             const markerData = {
               id: crypto.randomUUID(),
-              lng: +e.latlng.lng.toFixed(5),
-              lat: +e.latlng.lat.toFixed(5),
+              lng: +latlng.lng.toFixed(5),
+              lat: +latlng.lat.toFixed(5),
               label: val,
               priority: 'medium',
             };
@@ -118,11 +120,37 @@ export default function LeafletView({
             cleanup();
           }
         };
+      };
+
+      map.on('mousemove', (e) => {
+        lastPointerRef.current = { latlng: e.latlng, point: map.latLngToContainerPoint(e.latlng) };
       });
+
+      const handleKey = (ev) => {
+        const tag = ev.target?.tagName?.toLowerCase();
+        if (tag === 'input' || tag === 'textarea') return;
+        if (ev.key?.toLowerCase() !== 'c') return;
+        const fallback = map.getCenter();
+        const pointer = lastPointerRef.current;
+        const latlng = pointer?.latlng || fallback;
+        const pt = pointer?.point || map.latLngToContainerPoint(fallback);
+        spawnInput(pt, latlng);
+      };
+
+      window.addEventListener('keydown', handleKey);
+      keyListenerRef.current = handleKey;
       mapInstance.current = map;
+      setMapReady(true);
     };
     init();
-    return () => { isMounted = false; };
+    return () => {
+      isMounted = false;
+      if (keyListenerRef.current) {
+        window.removeEventListener('keydown', keyListenerRef.current);
+        keyListenerRef.current = null;
+      }
+      setMapReady(false);
+    };
   }, [onAddMarker]);
 
   const checkpointIcon = (L, label) =>
@@ -135,7 +163,7 @@ export default function LeafletView({
   // Sync markers
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
+    if (!map || !mapReady) return;
     const sync = async () => {
       const L = await loadLeaflet();
       Object.keys(markerObjects.current).forEach((id) => {
@@ -158,19 +186,23 @@ export default function LeafletView({
       });
     };
     sync();
-  }, [markers, onRemoveMarker]);
+  }, [markers, onRemoveMarker, mapReady]);
 
   // Crime zones
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
+    if (!map || !mapReady) return;
     const sync = async () => {
-      const L = await loadLeafletWithHeat();
+      const L = await loadLeaflet();
       // clear removed zones
       Object.keys(crimeLayers.current).forEach((id) => {
         if (!crimeZones.find((c) => c.id === id)) {
           crimeLayers.current[id].remove();
           delete crimeLayers.current[id];
+          if (crimePins.current[id]) {
+            crimePins.current[id].remove();
+            delete crimePins.current[id];
+          }
           if (crimePulseTimers.current[id]) {
             clearInterval(crimePulseTimers.current[id].timer);
             crimePulseTimers.current[id].circle.remove();
@@ -200,6 +232,19 @@ export default function LeafletView({
           crimeLayers.current[c.id].bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
           return;
         }
+        // bright red marker pin
+        const pinIcon = L.divIcon({
+          className: 'crime-pin-icon',
+          html: '<div class=\"crime-pin-head\"></div><div class=\"crime-pin-stem\"></div>',
+          iconSize: [16, 26],
+          iconAnchor: [8, 13],
+        });
+        const pin = L.marker([c.lat, c.lng], { icon: pinIcon, title: c.name });
+        pin.bindTooltip(c.name, { permanent: false, direction: 'top', className: 'zone-label' });
+        pin.on('click', () => onSelectCrime?.(c.id));
+        pin.addTo(map);
+        crimePins.current[c.id] = pin;
+
         const baseRadius = riskRadius(c.risk)(c);
         const inner = L.circleMarker([c.lat, c.lng], {
           radius: 10,
@@ -255,12 +300,14 @@ export default function LeafletView({
         circle.remove();
       });
       crimePulseTimers.current = {};
+      Object.values(crimePins.current).forEach((m) => m.remove());
+      crimePins.current = {};
       if (heatGroup.current) {
         heatGroup.current.remove();
         heatGroup.current = null;
       }
     };
-  }, [crimeZones, onSelectCrime]);
+  }, [crimeZones, onSelectCrime, mapReady]);
 
   // Unit markers / checkpoints
   useEffect(() => {
@@ -293,7 +340,7 @@ export default function LeafletView({
       });
     };
     sync();
-  }, [units]);
+  }, [units, mapReady]);
 
   // Dispatch lines
   useEffect(() => {
@@ -321,7 +368,7 @@ export default function LeafletView({
       lineLayer.current = group;
     };
     draw();
-  }, [lines]);
+  }, [lines, mapReady]);
 
   // Fly to selection
   useEffect(() => {

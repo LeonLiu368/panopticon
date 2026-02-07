@@ -5,7 +5,17 @@ import 'mapbox-gl/dist/mapbox-gl.css';
 const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoidGhlZXphbm9ueW1vdXMiLCJhIjoiY21sYnFzbTNvMHJwdDNlcTNnbHE0MzFkOSJ9.8GIdITSkZv_aYV4arbAFhg';
 const styleUrl = import.meta.env.VITE_MAP_STYLE || 'mapbox://styles/mapbox/dark-v11';
 
-export default function Map3DView({ markers = [], crimeZones = [], units = [], selected, onAddMarker, onRemoveMarker, onSelectCrime, onError, lines = [] }) {
+export default function Map3DView({
+  markers = [],
+  crimeZones = [],
+  units = [],
+  selected,
+  onAddMarker,
+  onRemoveMarker,
+  onSelectCrime,
+  onError,
+  lines = [],
+}) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerObjects = useRef({});
@@ -16,6 +26,8 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   const [mapReady, setMapReady] = useState(false);
   const activeInputRef = useRef(null);
   const lineLayerId = 'dispatch-lines';
+  const keyListenerRef = useRef(null);
+  const lastPointerRef = useRef(null);
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -38,6 +50,14 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       onError?.(err);
       return;
     }
+
+    // ensure interactions stay enabled
+    map.scrollZoom.enable();
+    map.boxZoom.enable();
+    map.dragPan.enable();
+    map.dragRotate.enable();
+    map.keyboard.enable();
+    map.doubleClickZoom.enable();
 
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'imperial' }), 'bottom-left');
@@ -82,8 +102,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       });
     });
 
-    map.on('click', (e) => {
-      // remove existing inputs
+    const spawnInputAt = (point, lngLat) => {
       document.querySelectorAll('.mapbox-checkpoint-input').forEach((el) => el.remove());
       activeInputRef.current = null;
       const input = document.createElement('input');
@@ -99,8 +118,8 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
         color: '#00b4ff',
         fontSize: '12px',
         boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-        left: `${e.point.x}px`,
-        top: `${e.point.y}px`,
+        left: `${point.x}px`,
+        top: `${point.y}px`,
       });
       input.className = 'mapbox-checkpoint-input';
       mapRef.current.parentElement.appendChild(input);
@@ -119,8 +138,8 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
         if (ev.key === 'Enter') {
           const markerData = {
             id: crypto.randomUUID(),
-            lng: +e.lngLat.lng.toFixed(5),
-            lat: +e.lngLat.lat.toFixed(5),
+            lng: +lngLat.lng.toFixed(5),
+            lat: +lngLat.lat.toFixed(5),
             label: input.value || 'Checkpoint',
             priority: 'medium',
           };
@@ -130,7 +149,25 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
           cleanup();
         }
       };
+    };
+
+    map.on('mousemove', (e) => {
+      lastPointerRef.current = { point: e.point, lngLat: e.lngLat };
     });
+
+    const handleKey = (ev) => {
+      const tag = ev.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (ev.key?.toLowerCase() !== 'c') return;
+      const fallback = map.getCenter();
+      const pointer = lastPointerRef.current;
+      const lngLat = pointer?.lngLat || fallback;
+      const point = pointer?.point || map.project(fallback);
+      spawnInputAt(point, lngLat);
+    };
+
+    window.addEventListener('keydown', handleKey);
+    keyListenerRef.current = handleKey;
 
     map.on('error', (e) => {
       console.warn('Mapbox error', e);
@@ -148,6 +185,10 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       mapLoaded.current = false;
       map.remove();
       mapInstance.current = null;
+      if (keyListenerRef.current) {
+        window.removeEventListener('keydown', keyListenerRef.current);
+        keyListenerRef.current = null;
+      }
     };
   }, [onAddMarker, onError]);
 

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import LeafletView from './components/LeafletView';
 import Map3DView from './components/Map3DView';
 import DispatchPanel from './components/DispatchPanel';
-import VoiceControl from './components/VoiceControl';
 import TranscriptRecorder from './components/TranscriptRecorder';
 import { haversineDistance, formatDuration } from './utils/geo';
 
@@ -19,6 +18,10 @@ export default function App() {
     { id: 'cz-01', name: 'Forbes & Morewood Robbery', lat: 40.4427, lng: -79.9425, severity: 'high', radius: 220, reported: '02:10', risk: 'critical' },
     { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18', risk: 'medium' },
     { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26', risk: 'high' },
+    { id: 'cz-04', name: 'Downtown Market Theft', lat: 40.4411, lng: -79.9965, severity: 'medium', radius: 200, reported: '02:35', risk: 'medium' },
+    { id: 'cz-05', name: 'Strip District Burglary', lat: 40.4522, lng: -79.9815, severity: 'high', radius: 210, reported: '02:42', risk: 'high' },
+    { id: 'cz-06', name: 'South Side Disturbance', lat: 40.4282, lng: -79.9855, severity: 'low', radius: 170, reported: '02:50', risk: 'low' },
+    { id: 'cz-07', name: 'Shadyside Vandalism', lat: 40.4548, lng: -79.9355, severity: 'medium', radius: 190, reported: '03:01', risk: 'medium' },
   ]);
   const [units, setUnits] = useState([
     { id: 'u-11', name: 'Unit A1', lat: 40.4385, lng: -79.992, status: 'available' },
@@ -28,6 +31,7 @@ export default function App() {
   ]);
   const [dispatches, setDispatches] = useState([]);
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
+  const [selectedTarget, setSelectedTarget] = useState({ type: 'crime', id: 'cz-01' });
   const [myLocation, setMyLocation] = useState(null);
 
   const handleMap3dError = useCallback(() => {
@@ -103,15 +107,24 @@ export default function App() {
     };
   };
 
-  const assignDispatch = async (crimeId, unitId) => {
-    const crime = crimeZones.find((c) => c.id === crimeId);
+  const resolveTarget = useCallback((target) => {
+    if (!target) return null;
+    if (target.type === 'crime') return crimeZones.find((c) => c.id === target.id);
+    if (target.type === 'marker') return markers.find((m) => m.id === target.id);
+    return null;
+  }, [crimeZones, markers]);
+
+  const assignDispatch = async (target, unitId) => {
     const unit = units.find((u) => u.id === unitId);
-    if (!crime || !unit) return;
-    const route = await fetchRoute({ lat: unit.lat, lng: unit.lng }, { lat: crime.lat, lng: crime.lng });
+    const dest = resolveTarget(target);
+    if (!unit || !dest) return;
+    const route = await fetchRoute({ lat: unit.lat, lng: unit.lng }, { lat: dest.lat, lng: dest.lng });
     const etaSeconds = route.duration || route.distance / 17;
     const dispatch = {
       id: crypto.randomUUID(),
-      crimeId,
+      destType: target.type,
+      destId: target.id,
+      crimeId: target.type === 'crime' ? target.id : null,
       unitId,
       status: 'en route',
       createdAt: new Date(),
@@ -122,8 +135,25 @@ export default function App() {
     };
     setDispatches((d) => [dispatch, ...d]);
     setUnits((list) => list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u)));
-    setSelected({ lat: crime.lat, lng: crime.lng });
+    setSelected({ lat: dest.lat, lng: dest.lng });
     setTimeResult({ distance: route.distance, times: [{ mode: 'cruiser', duration: etaSeconds }] });
+  };
+
+  const dispatchToMarker = async (markerId) => {
+    const marker = markers.find((m) => m.id === markerId);
+    if (!marker) return;
+    const avail = units.filter((u) => u.status === 'available');
+    if (!avail.length) {
+      alert('No available units to dispatch');
+      return;
+    }
+    const withDistance = avail.map((u) => ({
+      ...u,
+      distance: haversineDistance({ lat: u.lat, lng: u.lng }, { lat: marker.lat, lng: marker.lng }),
+    }));
+    const nearest = withDistance.sort((a, b) => a.distance - b.distance)[0];
+    setSelectedTarget({ type: 'marker', id: markerId });
+    await assignDispatch({ type: 'marker', id: markerId }, nearest.id);
   };
 
   // focus map on a unit from sidebar click
@@ -137,24 +167,12 @@ export default function App() {
     setSelected({ lat: crime.lat, lng: crime.lng });
   };
 
-  // Voice navigation handler
+  // Voice navigation handler with best-match lookup
   const handleVoiceNavigate = (target) => {
     if (!target) return;
     const text = target.toLowerCase().trim();
-    // Try exact name match in crimes
-    const crimeMatch = crimeZones.find((c) => (c.name || '').toLowerCase().includes(text));
-    if (crimeMatch) {
-      setSelectedCrimeId(crimeMatch.id);
-      setSelected({ lat: crimeMatch.lat, lng: crimeMatch.lng });
-      return;
-    }
-    // Try units
-    const unitMatch = units.find((u) => (u.name || '').toLowerCase().includes(text));
-    if (unitMatch) {
-      setSelected({ lat: unitMatch.lat, lng: unitMatch.lng });
-      return;
-    }
-    // Try coordinates "lat, lng"
+
+    // Coordinate override
     const coordMatch = text.match(/(-?\\d+\\.\\d+)\\s*,\\s*(-?\\d+\\.\\d+)/);
     if (coordMatch) {
       const lat = parseFloat(coordMatch[1]);
@@ -162,10 +180,50 @@ export default function App() {
       setSelected({ lat, lng });
       return;
     }
-    // Try checkpoint markers
-    const markerMatch = markers.find((m) => (m.label || '').toLowerCase().includes(text));
-    if (markerMatch) {
-      setSelected({ lat: markerMatch.lat, lng: markerMatch.lng });
+
+    const sim = (a, b) => {
+      a = a.toLowerCase(); b = b.toLowerCase();
+      if (!a || !b) return 0;
+      if (a.includes(b) || b.includes(a)) return 1;
+      const makeBigrams = (s) => {
+        const r = [];
+        for (let i = 0; i < s.length - 1; i++) r.push(s.slice(i, i + 2));
+        return r;
+      };
+      const bgA = makeBigrams(a);
+      const bgB = makeBigrams(b);
+      let overlap = 0;
+      const used = {};
+      bgA.forEach((bg) => {
+        const idx = bgB.indexOf(bg);
+        if (idx !== -1 && !used[idx]) {
+          overlap++;
+          used[idx] = true;
+        }
+      });
+      return (2 * overlap) / (bgA.length + bgB.length || 1);
+    };
+
+    const candidates = [
+      ...crimeZones.map((c) => ({ type: 'crime', id: c.id, name: c.name, lat: c.lat, lng: c.lng })),
+      ...units.map((u) => ({ type: 'unit', id: u.id, name: u.name, lat: u.lat, lng: u.lng })),
+      ...markers.map((m) => ({ type: 'marker', id: m.id, name: m.label, lat: m.lat, lng: m.lng })),
+    ];
+
+    let best = null;
+    let bestScore = 0;
+    candidates.forEach((c) => {
+      const score = sim(c.name || '', text);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    });
+
+    if (best && bestScore > 0.2) {
+      setSelected({ lat: best.lat, lng: best.lng });
+      if (best.type === 'crime') setSelectedCrimeId(best.id);
+      setSelectedTarget({ type: best.type, id: best.id });
     }
   };
 
@@ -269,13 +327,17 @@ export default function App() {
     }
   };
 
-  const selectedCrime = crimeZones.find((c) => c.id === selectedCrimeId) || crimeZones[0];
-  const unitsByDistance = selectedCrime
+  const selectedDestination = useMemo(() => {
+    const dest = resolveTarget(selectedTarget);
+    return dest || crimeZones[0];
+  }, [crimeZones, resolveTarget, selectedTarget]);
+
+  const unitsByDistance = selectedDestination
     ? [...units].map((u) => ({
         ...u,
         distance: haversineDistance(
           { lat: u.lat, lng: u.lng },
-          { lat: selectedCrime.lat, lng: selectedCrime.lng }
+          { lat: selectedDestination.lat, lng: selectedDestination.lng }
         ),
       }))
       .sort((a, b) => a.distance - b.distance)
@@ -283,22 +345,22 @@ export default function App() {
 
   // keep map focused on selected crime zone
   useEffect(() => {
-    if (selectedCrime) {
-      setSelected({ lat: selectedCrime.lat, lng: selectedCrime.lng });
+    if (selectedDestination) {
+      setSelected({ lat: selectedDestination.lat, lng: selectedDestination.lng });
     }
-  }, [selectedCrimeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDestination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // prepare dispatch lines crime -> unit
   const dispatchLines = dispatches
     .map((d) => {
-      const crime = crimeZones.find((c) => c.id === d.crimeId);
+      const target = resolveTarget({ type: d.destType || (d.crimeId ? 'crime' : 'marker'), id: d.destId || d.crimeId });
       const unit = units.find((u) => u.id === d.unitId);
-      if (!crime || !unit) return null;
+      if (!target || !unit) return null;
       const coords = d.routeCoords
         ? d.routeCoords.map(([lng, lat]) => ({ lat, lng }))
         : [
             { lat: unit.lat, lng: unit.lng },
-            { lat: crime.lat, lng: crime.lng },
+            { lat: target.lat, lng: target.lng },
           ];
       return {
         id: d.id,
@@ -350,7 +412,6 @@ export default function App() {
               });
             }
           }}>My location</button>
-          <VoiceControl onCommand={updateFromVoice} />
         </div>
       </div>
       <div className="hazard-stripe" />
@@ -399,26 +460,26 @@ export default function App() {
       <div className="card">
         <DispatchPanel
           markers={markers}
-          onAdd={addMarker}
           onRemove={removeMarker}
-          onComputeTime={computeTime}
-          timeResult={timeResult}
+          onDispatchMarker={dispatchToMarker}
           stats={dashboardStats}
           crimeZones={crimeZones}
           selectedCrimeId={selectedCrimeId}
           onSelectCrime={(crimeId, locOrUnit) => {
-            setSelectedCrimeId(crimeId);
-            if (locOrUnit?.lat && locOrUnit?.lng) setSelected({ lat: locOrUnit.lat, lng: locOrUnit.lng });
-            else focusCrime(crimeId);
-          }}
-          units={unitsByDistance}
-          onAssign={assignDispatch}
-          onSelectUnit={(crimeId, unit) => focusUnit(crimeId, unit)}
-          dispatches={dispatches}
+          setSelectedCrimeId(crimeId);
+          setSelectedTarget({ type: 'crime', id: crimeId });
+          if (locOrUnit?.lat && locOrUnit?.lng) setSelected({ lat: locOrUnit.lat, lng: locOrUnit.lng });
+          else focusCrime(crimeId);
+        }}
+        units={unitsByDistance}
+        onAssign={(crimeId, unitId) => assignDispatch({ type: 'crime', id: crimeId }, unitId)}
+        onSelectUnit={(crimeId, unit) => focusUnit(crimeId, unit)}
+        dispatches={dispatches}
           onUpdateDispatch={updateDispatchStatus}
         />
-        <TranscriptRecorder onNavigate={handleVoiceNavigate} />
       </div>
+      {/* Floating voice FAB */}
+      <TranscriptRecorder onNavigate={handleVoiceNavigate} />
     </div>
   );
 }
