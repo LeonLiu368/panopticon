@@ -3,6 +3,7 @@ import { useMemo } from 'react';
 export default function DispatchPanel({
   markers,
   onRemove,
+  onDispatchMarker,
   stats,
   crimeZones,
   selectedCrimeId,
@@ -71,7 +72,7 @@ export default function DispatchPanel({
                 <button
                   className="ghost"
                   style={{ padding: 0, color: 'inherit', textAlign: 'left' }}
-                  onClick={() => onSelectUnit?.(selectedCrimeId, u)}
+                  onClick={() => onSelectUnit && onSelectUnit(selectedCrimeId, u)}
                 >
                   <strong>{u.name}</strong>
                   <div className="small">{u.status} · {selectedCrime ? `${(u.distance / 1000).toFixed(2)} km away` : ''}</div>
@@ -112,7 +113,7 @@ export default function DispatchPanel({
       <div style={{ marginTop: 12 }}>
         <div className="section-title">
           <strong>Markers ({markers.length})</strong>
-          <span className="small">Click a pin on the map to delete</span>
+          <span className="small">Click a pin on the map to delete · Dispatch to checkpoint</span>
         </div>
         <div className="marker-list">
           {markers.map((marker) => (
@@ -121,7 +122,10 @@ export default function DispatchPanel({
                 <strong>{marker.label}</strong>
                 <div className="small">{marker.lat}, {marker.lng}</div>
               </div>
-              <button className="ghost" onClick={() => onRemove(marker.id)}>Remove</button>
+              <div className="flex" style={{ gap: 6 }}>
+                <button className="dispatch" onClick={() => onDispatchMarker?.(marker.id)}>Dispatch nearest</button>
+                <button className="ghost" onClick={() => onRemove(marker.id)}>Remove</button>
+              </div>
             </div>
           ))}
           {markers.length === 0 && <div className="small">No markers yet — click map to place.</div>}

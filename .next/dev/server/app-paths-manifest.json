@@ -1,0 +1,8 @@
+{
+  "/api/dispatch-unit/route": "app/api/dispatch-unit/route.js",
+  "/api/incident-state/route": "app/api/incident-state/route.js",
+  "/api/update-routes/route": "app/api/update-routes/route.js",
+  "/api/vapi-webhook/route": "app/api/vapi-webhook/route.js",
+  "/api/weather/route": "app/api/weather/route.js",
+  "/page": "app/page.js"
+}

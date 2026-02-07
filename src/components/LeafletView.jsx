@@ -32,6 +32,7 @@ export default function LeafletView({
   const lastPointerRef = useRef(null);
   const [mapReady, setMapReady] = useState(false);
 
+  // Helper: load Leaflet and return L
   const loadLeaflet = async () => {
     const Lmod = await import(/* @vite-ignore */ 'https://unpkg.com/leaflet@1.9.4/dist/leaflet-src.esm.js');
     const L = window.L || Lmod.default || Lmod;
@@ -71,28 +72,24 @@ export default function LeafletView({
           { enableHighAccuracy: true, timeout: 3000, maximumAge: 60000 }
         );
       }
-
-      // Press C to spawn inline checkpoint input at cursor
       const spawnInput = (point, latlng) => {
         document.querySelectorAll('.leaflet-checkpoint-input').forEach((el) => el.remove());
         activeInputRef.current = null;
         const labelInput = document.createElement('input');
         labelInput.type = 'text';
         labelInput.placeholder = 'Checkpoint label';
-        Object.assign(labelInput.style, {
-          position: 'absolute',
-          zIndex: '9999',
-          padding: '6px 8px',
-          border: '1px solid #00b4ff',
-          borderRadius: '6px',
-          background: '#0a0d14',
-          color: '#00b4ff',
-          fontSize: '12px',
-          boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
-          left: `${point.x}px`,
-          top: `${point.y}px`,
-          pointerEvents: 'auto',
-        });
+        labelInput.style.position = 'absolute';
+        labelInput.style.zIndex = 9999;
+        labelInput.style.padding = '6px 8px';
+        labelInput.style.border = '1px solid #00b4ff';
+        labelInput.style.borderRadius = '6px';
+        labelInput.style.background = '#0a0d14';
+        labelInput.style.color = '#00b4ff';
+        labelInput.style.fontSize = '12px';
+        labelInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
+        labelInput.style.left = `${point.x}px`;
+        labelInput.style.top = `${point.y}px`;
+        labelInput.style.pointerEvents = 'auto';
         labelInput.className = 'leaflet-checkpoint-input';
         mapRef.current.appendChild(labelInput);
         labelInput.focus();
@@ -110,13 +107,14 @@ export default function LeafletView({
           if (ev.key === 'Enter') {
             const val = labelInput.value || 'Checkpoint';
             cleanup();
-            onAddMarker({
+            const markerData = {
               id: crypto.randomUUID(),
               lng: +latlng.lng.toFixed(5),
               lat: +latlng.lat.toFixed(5),
               label: val,
               priority: 'medium',
-            });
+            };
+            onAddMarker(markerData);
           } else if (ev.key === 'Escape') {
             cleanup();
           }
@@ -229,10 +227,11 @@ export default function LeafletView({
       };
       crimeZones.forEach((c) => {
         if (crimeLayers.current[c.id]) {
+          // update label if needed
           crimeLayers.current[c.id].bindTooltip(c.name, { permanent: true, direction: 'top', className: 'zone-label' });
           return;
         }
-        // Red pin marker
+        // bright red marker pin
         const pinIcon = L.divIcon({
           className: 'crime-pin-icon',
           html: '<div class="crime-pin-head"></div><div class="crime-pin-stem"></div>',
@@ -258,7 +257,7 @@ export default function LeafletView({
         inner.on('click', () => onSelectCrime?.(c.id));
         crimeLayers.current[c.id] = inner;
 
-        // Pulsing outer ring
+        // pulsing outer ring (meters)
         const pulseCircle = L.circle([c.lat, c.lng], {
           radius: baseRadius,
           color: '#ff2d2d',
@@ -275,7 +274,7 @@ export default function LeafletView({
         crimePulseTimers.current[c.id] = { timer, circle: pulseCircle };
       });
 
-      // Heatmap overlay (concentric circles weighted by risk)
+      // Heatmap overlay (manual concentric circles as fallback to plugin)
       if (heatGroup.current) {
         heatGroup.current.remove();
         heatGroup.current = null;

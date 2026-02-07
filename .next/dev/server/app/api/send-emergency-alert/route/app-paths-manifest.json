@@ -1,0 +1,3 @@
+{
+  "/api/send-emergency-alert/route": "app/api/send-emergency-alert/route.js"
+}

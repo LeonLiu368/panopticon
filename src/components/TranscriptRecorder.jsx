@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 
+// Browser SpeechRecognition is fast and free; falls back to manual note entry.
 export default function TranscriptRecorder({ onNavigate, onDispatchCommand }) {
   const recognitionRef = useRef(null);
   const downRef = useRef(false);
@@ -90,6 +91,7 @@ export default function TranscriptRecorder({ onNavigate, onDispatchCommand }) {
         if (listening) {
           recognitionRef.current?.stop();
           setListening(false);
+          // allow any final result event to land
           setTimeout(() => {
             if (transcript.trim()) saveEntry();
           }, 120);
@@ -112,7 +114,7 @@ export default function TranscriptRecorder({ onNavigate, onDispatchCommand }) {
         <button
           className={`mic-button ${listening ? 'live' : ''}`}
           onClick={toggle}
-          title="Hold Space to talk. Say: dispatch [unit] to [crime]"
+          title="Say: navigate to / go to ..."
           aria-label="Microphone voice control"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -127,10 +129,10 @@ export default function TranscriptRecorder({ onNavigate, onDispatchCommand }) {
       )}
       {supported && expanded && (
         <div className="voice-fab-panel">
-          <div className="small" style={{ marginBottom: 6 }}>Say "dispatch [unit] to [crime zone]"</div>
+          <div className="small" style={{ marginBottom: 6 }}>Say "navigate to / go to … [crime / unit / location]"</div>
           <textarea rows={2} value={transcript} onChange={(e) => setTranscript(e.target.value)} />
           <div className="voice-footer" style={{ marginTop: 6 }}>
-            <div className="small">Hold Space · push-to-talk</div>
+            <div className="small">Routes both maps</div>
             <button className="ghost" onClick={saveEntry} disabled={!transcript}>Apply</button>
           </div>
         </div>

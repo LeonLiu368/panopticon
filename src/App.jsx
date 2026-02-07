@@ -31,6 +31,7 @@ export default function App() {
   ]);
   const [dispatches, setDispatches] = useState([]);
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
+  const [selectedTarget, setSelectedTarget] = useState({ type: 'crime', id: 'cz-01' });
   const [myLocation, setMyLocation] = useState(null);
 
   const handleMap3dError = useCallback(() => {
@@ -77,7 +78,6 @@ export default function App() {
     setTimeResult({ distance: dist, times });
   };
 
-  // Fetch real road route from Mapbox Directions API, fallback to straight line
   const fetchRoute = async (from, to) => {
     const token = import.meta.env.VITE_MAPBOX_TOKEN;
     try {
@@ -87,9 +87,9 @@ export default function App() {
         const data = await res.json();
         if (data?.routes?.length) {
           return {
-            coords: data.routes[0].geometry.coordinates,
-            distance: data.routes[0].distance,
-            duration: data.routes[0].duration,
+            coords: data.routes[0].geometry.coordinates, // [lng,lat]
+            distance: data.routes[0].distance, // meters
+            duration: data.routes[0].duration, // seconds
           };
         }
       }
@@ -107,37 +107,59 @@ export default function App() {
     };
   };
 
-  const assignDispatch = async (crimeId, unitId) => {
-    const crime = crimeZones.find((c) => c.id === crimeId);
+  const resolveTarget = useCallback((target) => {
+    if (!target) return null;
+    if (target.type === 'crime') return crimeZones.find((c) => c.id === target.id);
+    if (target.type === 'marker') return markers.find((m) => m.id === target.id);
+    return null;
+  }, [crimeZones, markers]);
+
+  const assignDispatch = async (target, unitId) => {
     const unit = units.find((u) => u.id === unitId);
-    if (!crime || !unit) return;
-    const route = await fetchRoute(
-      { lat: unit.lat, lng: unit.lng },
-      { lat: crime.lat, lng: crime.lng }
-    );
+    const dest = resolveTarget(target);
+    if (!unit || !dest) return;
+    const route = await fetchRoute({ lat: unit.lat, lng: unit.lng }, { lat: dest.lat, lng: dest.lng });
     const etaSeconds = route.duration || route.distance / 17;
-    setDispatches((d) => [
-      {
-        id: crypto.randomUUID(),
-        crimeId,
-        unitId,
-        status: 'en route',
-        createdAt: new Date(),
-        etaSeconds,
-        routeCoords: route.coords,
-        totalMeters: route.distance,
-        progress: 0,
-      },
-      ...d,
-    ]);
-    setUnits((list) =>
-      list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u))
-    );
-    setSelected({ lat: crime.lat, lng: crime.lng });
+    const dispatch = {
+      id: crypto.randomUUID(),
+      destType: target.type,
+      destId: target.id,
+      crimeId: target.type === 'crime' ? target.id : null,
+      unitId,
+      status: 'en route',
+      createdAt: new Date(),
+      etaSeconds,
+      routeCoords: route.coords,
+      totalMeters: route.distance,
+      progress: 0,
+    };
+    setDispatches((d) => [dispatch, ...d]);
+    setUnits((list) => list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u)));
+    setSelected({ lat: dest.lat, lng: dest.lng });
     setTimeResult({ distance: route.distance, times: [{ mode: 'cruiser', duration: etaSeconds }] });
+    // keep UI state in sync with this dispatch
+    setSelectedTarget(target);
+    if (target.type === 'crime') setSelectedCrimeId(target.id);
   };
 
-  // Voice dispatch: fuzzy-match unit and crime names, then dispatch
+  const dispatchToMarker = async (markerId) => {
+    const marker = markers.find((m) => m.id === markerId);
+    if (!marker) return;
+    const avail = units.filter((u) => u.status === 'available');
+    if (!avail.length) {
+      alert('No available units to dispatch');
+      return;
+    }
+    const withDistance = avail.map((u) => ({
+      ...u,
+      distance: haversineDistance({ lat: u.lat, lng: u.lng }, { lat: marker.lat, lng: marker.lng }),
+    }));
+    const nearest = withDistance.sort((a, b) => a.distance - b.distance)[0];
+    setSelectedTarget({ type: 'marker', id: markerId });
+    await assignDispatch({ type: 'marker', id: markerId }, nearest.id);
+  };
+
+  // Voice dispatch: find best matching unit and crime text and dispatch
   const handleVoiceDispatch = useCallback(
     async ({ unit: unitText, crime: crimeText }) => {
       if (!unitText || !crimeText) return;
@@ -158,22 +180,94 @@ export default function App() {
       const bestUnit = units
         .map((u) => ({ u, score: sim(unitText, u.name) + (u.status === 'available' ? 0.2 : 0) }))
         .sort((a, b) => b.score - a.score)[0]?.u;
-      const bestCrime = crimeZones
-        .map((c) => ({ c, score: sim(crimeText, c.name) }))
-        .sort((a, b) => b.score - a.score)[0]?.c;
-      if (!bestUnit || !bestCrime) return;
-      await assignDispatch(bestCrime.id, bestUnit.id);
+    const bestCrime = crimeZones
+      .map((c) => ({ c, score: sim(crimeText, c.name) }))
+      .sort((a, b) => b.score - a.score)[0]?.c;
+    if (!bestUnit || !bestCrime) return;
+      await assignDispatch({ type: 'crime', id: bestCrime.id }, bestUnit.id);
+      setSelectedTarget({ type: 'crime', id: bestCrime.id });
       setSelectedCrimeId(bestCrime.id);
       setSelected({ lat: bestUnit.lat, lng: bestUnit.lng });
     },
-    [crimeZones, units]
+    [assignDispatch, crimeZones, units]
   );
+
+  // focus map on a unit from sidebar click
+  const focusUnit = (_crimeId, unit) => {
+    if (!unit) return;
+    setSelected({ lat: unit.lat, lng: unit.lng });
+  };
+  const focusCrime = (crimeId, loc) => {
+    const crime = crimeZones.find((c) => c.id === crimeId) || loc;
+    if (!crime) return;
+    setSelected({ lat: crime.lat, lng: crime.lng });
+  };
+
+  // Voice navigation handler with best-match lookup
+  const handleVoiceNavigate = (target) => {
+    if (!target) return;
+    const text = target.toLowerCase().trim();
+
+    // Coordinate override
+    const coordMatch = text.match(/(-?\d+\.\d+)\s*,\s*(-?\d+\.\d+)/);
+    if (coordMatch) {
+      const lat = parseFloat(coordMatch[1]);
+      const lng = parseFloat(coordMatch[2]);
+      setSelected({ lat, lng });
+      return;
+    }
+
+    const sim = (a, b) => {
+      a = a.toLowerCase(); b = b.toLowerCase();
+      if (!a || !b) return 0;
+      if (a.includes(b) || b.includes(a)) return 1;
+      const makeBigrams = (s) => {
+        const r = [];
+        for (let i = 0; i < s.length - 1; i++) r.push(s.slice(i, i + 2));
+        return r;
+      };
+      const bgA = makeBigrams(a);
+      const bgB = makeBigrams(b);
+      let overlap = 0;
+      const used = {};
+      bgA.forEach((bg) => {
+        const idx = bgB.indexOf(bg);
+        if (idx !== -1 && !used[idx]) {
+          overlap++;
+          used[idx] = true;
+        }
+      });
+      return (2 * overlap) / (bgA.length + bgB.length || 1);
+    };
+
+    const candidates = [
+      ...crimeZones.map((c) => ({ type: 'crime', id: c.id, name: c.name, lat: c.lat, lng: c.lng })),
+      ...units.map((u) => ({ type: 'unit', id: u.id, name: u.name, lat: u.lat, lng: u.lng })),
+      ...markers.map((m) => ({ type: 'marker', id: m.id, name: m.label, lat: m.lat, lng: m.lng })),
+    ];
+
+    let best = null;
+    let bestScore = 0;
+    candidates.forEach((c) => {
+      const score = sim(c.name || '', text);
+      if (score > bestScore) {
+        bestScore = score;
+        best = c;
+      }
+    });
+
+    if (best && bestScore > 0.2) {
+      setSelected({ lat: best.lat, lng: best.lng });
+      if (best.type === 'crime') setSelectedCrimeId(best.id);
+      setSelectedTarget({ type: best.type, id: best.id });
+    }
+  };
 
   const updateDispatchStatus = (dispatchId, status) => {
     setDispatches((d) => d.map((x) => (x.id === dispatchId ? { ...x, status } : x)));
   };
 
-  // Move dispatched units along road route (or straight line fallback)
+  // move dispatched units toward their crime target (follow road route if available)
   useEffect(() => {
     const stepMs = 1000;
     const speed = 15; // m/s cruiser
@@ -215,10 +309,7 @@ export default function App() {
             [u.lng, u.lat],
             [target.lng, target.lat],
           ];
-          const total = dispatch.totalMeters || haversineDistance(
-            { lat: coords[0][1], lng: coords[0][0] },
-            { lat: coords.at(-1)[1], lng: coords.at(-1)[0] }
-          );
+          const total = dispatch.totalMeters || haversineDistance({ lat: coords[0][1], lng: coords[0][0] }, { lat: coords.at(-1)[1], lng: coords.at(-1)[0] });
           const progress = Math.min(1, (dispatch.progress || 0) + (speed * (stepMs / 1000)) / (total || 1));
           const nextPoint = pointAlong(coords, progress) || { lat: target.lat, lng: target.lng };
           const remaining = haversineDistance(nextPoint, { lat: target.lat, lng: target.lng });
@@ -272,13 +363,17 @@ export default function App() {
     }
   };
 
-  const selectedCrime = crimeZones.find((c) => c.id === selectedCrimeId) || crimeZones[0];
-  const unitsByDistance = selectedCrime
+  const selectedDestination = useMemo(() => {
+    const dest = resolveTarget(selectedTarget);
+    return dest || crimeZones[0];
+  }, [crimeZones, resolveTarget, selectedTarget]);
+
+  const unitsByDistance = selectedDestination
     ? [...units].map((u) => ({
         ...u,
         distance: haversineDistance(
           { lat: u.lat, lng: u.lng },
-          { lat: selectedCrime.lat, lng: selectedCrime.lng }
+          { lat: selectedDestination.lat, lng: selectedDestination.lng }
         ),
       }))
       .sort((a, b) => a.distance - b.distance)
@@ -286,22 +381,22 @@ export default function App() {
 
   // Keep map focused on selected crime zone
   useEffect(() => {
-    if (selectedCrime) {
-      setSelected({ lat: selectedCrime.lat, lng: selectedCrime.lng });
+    if (selectedDestination) {
+      setSelected({ lat: selectedDestination.lat, lng: selectedDestination.lng });
     }
-  }, [selectedCrimeId]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [selectedDestination]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Prepare dispatch lines (multi-point road routes)
   const dispatchLines = dispatches
     .map((d) => {
-      const crime = crimeZones.find((c) => c.id === d.crimeId);
+      const target = resolveTarget({ type: d.destType || (d.crimeId ? 'crime' : 'marker'), id: d.destId || d.crimeId });
       const unit = units.find((u) => u.id === d.unitId);
-      if (!crime || !unit) return null;
+      if (!target || !unit) return null;
       const coords = d.routeCoords
         ? d.routeCoords.map(([lng, lat]) => ({ lat, lng }))
         : [
             { lat: unit.lat, lng: unit.lng },
-            { lat: crime.lat, lng: crime.lng },
+            { lat: target.lat, lng: target.lng },
           ];
       return {
         id: d.id,
@@ -402,25 +497,26 @@ export default function App() {
         <DispatchPanel
           markers={markers}
           onRemove={removeMarker}
+          onDispatchMarker={dispatchToMarker}
           stats={dashboardStats}
           crimeZones={crimeZones}
           selectedCrimeId={selectedCrimeId}
-          onSelectCrime={(crimeId, loc) => {
+          onSelectCrime={(crimeId, locOrUnit) => {
             setSelectedCrimeId(crimeId);
-            if (loc?.lat && loc?.lng) setSelected(loc);
+            setSelectedTarget({ type: 'crime', id: crimeId });
+            if (locOrUnit?.lat && locOrUnit?.lng) setSelected({ lat: locOrUnit.lat, lng: locOrUnit.lng });
+            else focusCrime(crimeId);
           }}
           units={unitsByDistance}
-          onSelectUnit={(crimeId, unit) => {
-            if (unit) setSelected({ lat: unit.lat, lng: unit.lng });
-          }}
-          onAssign={assignDispatch}
+          onAssign={(crimeId, unitId) => assignDispatch({ type: 'crime', id: crimeId }, unitId)}
+          onSelectUnit={(crimeId, unit) => focusUnit(crimeId, unit)}
           dispatches={dispatches}
           onUpdateDispatch={updateDispatchStatus}
         />
       </div>
-
       {/* Floating voice FAB */}
       <TranscriptRecorder
+        onNavigate={handleVoiceNavigate}
         onDispatchCommand={handleVoiceDispatch}
       />
     </div>

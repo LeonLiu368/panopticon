@@ -51,6 +51,7 @@ export default function Map3DView({
       return;
     }
 
+    // ensure interactions stay enabled
     map.scrollZoom.enable();
     map.boxZoom.enable();
     map.dragPan.enable();
@@ -101,7 +102,6 @@ export default function Map3DView({
       });
     });
 
-    // Press C to spawn inline checkpoint input at cursor
     const spawnInputAt = (point, lngLat) => {
       document.querySelectorAll('.mapbox-checkpoint-input').forEach((el) => el.remove());
       activeInputRef.current = null;
@@ -110,7 +110,7 @@ export default function Map3DView({
       input.placeholder = 'Checkpoint label';
       Object.assign(input.style, {
         position: 'absolute',
-        zIndex: '9999',
+        zIndex: 9999,
         padding: '6px 8px',
         border: '1px solid #00b4ff',
         borderRadius: '6px',
@@ -222,7 +222,7 @@ export default function Map3DView({
     });
   }, [markers, onRemoveMarker]);
 
-  // Crime zones: single GeoJSON source with pulsing halo
+  // sync crime zones as a single source + layers (with pulsing halo)
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !mapReady) return;
@@ -299,14 +299,14 @@ export default function Map3DView({
       },
     });
 
-    // Click handler
+    // click handler
     map.off('click', layerId);
     map.on('click', layerId, (e) => {
       const id = e.features?.[0]?.properties?.id || e.features?.[0]?.properties?.name;
       if (id) onSelectCrime?.(id);
     });
 
-    // Pulse animation
+    // animation
     if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
     const animate = () => {
       const t = Date.now() / 500;
