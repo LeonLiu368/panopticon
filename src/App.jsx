@@ -7,6 +7,15 @@ import { haversineDistance, formatDuration } from './utils/geo';
 import bodycamVideoSrc from '../media/StockBodycam.mp4';
 
 export default function App() {
+  const [loading, setLoading] = useState(true);
+  const [fadeOut, setFadeOut] = useState(false);
+
+  useEffect(() => {
+    const fadeTimer = setTimeout(() => setFadeOut(true), 2600);
+    const doneTimer = setTimeout(() => setLoading(false), 3000);
+    return () => { clearTimeout(fadeTimer); clearTimeout(doneTimer); };
+  }, []);
+
   const [markers, setMarkers] = useState([]);
   const [selected, setSelected] = useState(null);
   const [timeResult, setTimeResult] = useState(null);
@@ -480,6 +489,16 @@ export default function App() {
     .filter(Boolean);
 
   return (
+    <>
+    {loading && (
+      <div className={`loading-screen ${fadeOut ? 'fade-out' : ''}`}>
+        <div className="loading-ripple" />
+        <div className="loading-ripple r2" />
+        <div className="loading-ripple r3" />
+        <h1 className="loading-title">PATROLOPS</h1>
+        <div className="loading-subtitle">CIVIC.OPS.CONSOLE v2.1.4</div>
+      </div>
+    )}
     <div className="app-shell">
       <div className="top-bar">
         <div className="brand">
@@ -642,5 +661,6 @@ export default function App() {
         </div>
       )}
     </div>
+    </>
   );
 }
