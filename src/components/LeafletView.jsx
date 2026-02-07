@@ -30,6 +30,8 @@ export default function LeafletView({
   const activeInputRef = useRef(null);
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
+  const standbyStreamRef = useRef(null);
+  const unitPopupCache = useRef({});
   const [mapReady, setMapReady] = useState(false);
 
   // Helper: load Leaflet and return L
@@ -149,6 +151,7 @@ export default function LeafletView({
         window.removeEventListener('keydown', keyListenerRef.current);
         keyListenerRef.current = null;
       }
+      unitPopupCache.current = {};
       setMapReady(false);
     };
   }, [onAddMarker]);
@@ -333,15 +336,54 @@ export default function LeafletView({
           }
         }
       });
-      const bodycamHtml = (unit) => `
-        <div style="width:200px">
-          <strong>${unit.name}</strong><br/>
-          <span style="color:#4fc3f7;">${unit.status}</span>
-          <div style="margin-top:6px;border-radius:8px;overflow:hidden;border:1px solid #0d1627;box-shadow:0 6px 16px rgba(0,0,0,0.35);">
-            <video src="https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4" width="200" height="112" autoplay muted loop playsinline style="display:block;background:#000;"></video>
-          </div>
-          <div style="font-size:10px;color:#72819e;margin-top:4px;">Bodycam feed (demo)</div>
-        </div>`;
+      const buildBodycam = (unit) => {
+        const wrap = document.createElement('div');
+        wrap.style.width = '200px';
+        wrap.innerHTML = `<strong>${unit.name}</strong><br/><span style=\"color:#4fc3f7;\">${unit.status}</span>`;
+        const frame = document.createElement('div');
+        frame.style.marginTop = '6px';
+        frame.style.borderRadius = '8px';
+        frame.style.overflow = 'hidden';
+        frame.style.border = '1px solid #0d1627';
+        frame.style.boxShadow = '0 6px 16px rgba(0,0,0,0.35)';
+        const video = document.createElement('video');
+        video.width = 200;
+        video.height = 112;
+        video.autoplay = true;
+        video.muted = true;
+        video.loop = true;
+        video.playsInline = true;
+        video.style.display = 'block';
+        video.style.objectFit = 'cover';
+        frame.appendChild(video);
+        wrap.appendChild(frame);
+        const caption = document.createElement('div');
+        caption.textContent = 'Bodycam feed';
+        caption.style.fontSize = '10px';
+        caption.style.color = '#72819e';
+        caption.style.marginTop = '4px';
+        wrap.appendChild(caption);
+
+        const attachCamera = async () => {
+          if (unit.id === 'u-standby' && navigator.mediaDevices?.getUserMedia) {
+            try {
+              if (!standbyStreamRef.current) {
+                standbyStreamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+              }
+              video.srcObject = standbyStreamRef.current;
+              await video.play().catch(() => {});
+              caption.textContent = 'Bodycam feed (live)';
+            } catch (err) {
+              video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+              caption.textContent = 'Bodycam feed (demo)';
+            }
+          } else {
+            video.src = 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4';
+            caption.textContent = 'Bodycam feed (demo)';
+          }
+        };
+        return { el: wrap, attachCamera };
+      };
 
       units.forEach((u) => {
         const color = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
@@ -351,16 +393,34 @@ export default function LeafletView({
           iconAnchor: [7, 7],
         });
         const existing = unitMarkers.current[u.id];
+        if (!unitPopupCache.current[u.id]) {
+          unitPopupCache.current[u.id] = buildBodycam(u);
+        }
+        const bodycam = unitPopupCache.current[u.id];
+        const statusNode = bodycam.el.querySelector('span');
+        if (statusNode) statusNode.textContent = u.status;
         if (existing) {
           existing.setLatLng([u.lat, u.lng]);
           existing.setOpacity(u.status === 'available' ? 1 : 0.8);
           existing.setIcon(icon);
-          existing.setPopupContent(bodycamHtml(u));
+          // keep popup DOM stable
+          const popup = existing.getPopup();
+          if (popup) {
+            popup.setContent(bodycam.el);
+          }
           return;
         }
         const marker = L.marker([u.lat, u.lng], { title: u.name, opacity: u.status === 'available' ? 1 : 0.8, icon });
-        marker.bindPopup(bodycamHtml(u));
-        marker.on('click', () => map.flyTo([u.lat, u.lng], 15));
+        marker.bindPopup(bodycam.el, { autoClose: false, closeOnClick: false, closeButton: true });
+        marker.on('popupopen', () => {
+          bodycam.attachCamera();
+          const vid = bodycam.el.querySelector('video');
+          if (vid) vid.play().catch(() => {});
+        });
+        marker.on('click', () => {
+          map.flyTo([u.lat, u.lng], 15);
+          marker.openPopup();
+        });
         marker.addTo(map);
         unitMarkers.current[u.id] = marker;
       });

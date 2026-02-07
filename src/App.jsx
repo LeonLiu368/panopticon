@@ -15,7 +15,7 @@ export default function App() {
   const [searchError, setSearchError] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [crimeZones, setCrimeZones] = useState([
-    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4439, lng: -79.9429, severity: 'medium', radius: 180, reported: '02:18', risk: 'medium' },
+    { id: 'cz-02', name: 'Cohon Center Disturbance', lat: 40.4431, lng: -79.9425, severity: 'medium', radius: 500, reported: '02:18', risk: 'medium' },
     { id: 'cz-03', name: 'Schenley Drive Assault', lat: 40.4387, lng: -79.9438, severity: 'high', radius: 240, reported: '02:26', risk: 'high' },
     { id: 'cz-04', name: 'Downtown Market Theft', lat: 40.4411, lng: -79.9965, severity: 'medium', radius: 200, reported: '02:35', risk: 'medium' },
     // Spread-out zones
@@ -59,7 +59,7 @@ export default function App() {
         ...prev,
         {
           id: 'u-standby',
-          name: 'Stand By',
+          name: 'Officer Leon',
           lat: myLocation.lat,
           lng: myLocation.lng,
           status: 'available',
