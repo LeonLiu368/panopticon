@@ -60,14 +60,40 @@ export default function LeafletView({
         );
       }
       map.on('click', (e) => {
-        const markerData = {
-          id: crypto.randomUUID(),
-          lng: +e.latlng.lng.toFixed(5),
-          lat: +e.latlng.lat.toFixed(5),
-          label: prompt('Checkpoint label?', 'Checkpoint') || 'Checkpoint',
-          priority: 'medium',
+        const labelInput = document.createElement('input');
+        labelInput.type = 'text';
+        labelInput.placeholder = 'Checkpoint label';
+        labelInput.style.position = 'absolute';
+        labelInput.style.zIndex = 9999;
+        labelInput.style.padding = '6px 8px';
+        labelInput.style.border = '1px solid #00b4ff';
+        labelInput.style.borderRadius = '6px';
+        labelInput.style.background = '#0a0d14';
+        labelInput.style.color = '#00b4ff';
+        labelInput.style.fontSize = '12px';
+        labelInput.style.boxShadow = '0 4px 12px rgba(0,0,0,0.4)';
+        const container = mapRef.current.getBoundingClientRect();
+        labelInput.style.left = `${e.originalEvent.clientX - container.left}px`;
+        labelInput.style.top = `${e.originalEvent.clientY - container.top}px`;
+        labelInput.style.pointerEvents = 'auto';
+        mapRef.current.appendChild(labelInput);
+        labelInput.focus();
+        labelInput.onkeydown = (ev) => {
+          if (ev.key === 'Enter') {
+            const val = labelInput.value || 'Checkpoint';
+            labelInput.remove();
+            const markerData = {
+              id: crypto.randomUUID(),
+              lng: +e.latlng.lng.toFixed(5),
+              lat: +e.latlng.lat.toFixed(5),
+              label: val,
+              priority: 'medium',
+            };
+            onAddMarker(markerData);
+          } else if (ev.key === 'Escape') {
+            labelInput.remove();
+          }
         };
-        onAddMarker(markerData);
       });
       mapInstance.current = map;
     };
@@ -226,7 +252,7 @@ export default function LeafletView({
                 [l.from.lat, l.from.lng],
                 [l.to.lat, l.to.lng],
               ],
-          { color: '#f6c452', weight: 2, dashArray: l.status === 'arrived' ? '' : '6 4' }
+          { color: '#3b82f6', weight: 2.5, dashArray: l.status === 'arrived' ? '' : '6 4' }
         )
       );
       const group = L.featureGroup(polylines).addTo(map);

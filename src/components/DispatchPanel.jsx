@@ -13,6 +13,7 @@ export default function DispatchPanel({
   crimeZones,
   selectedCrimeId,
   onSelectCrime,
+  onSelectUnit,
   units,
   onAssign,
   dispatches,
@@ -182,7 +183,7 @@ export default function DispatchPanel({
                 <strong>{c.name}</strong>
                 <div className="small">Severity {c.severity} · radius {c.radius}m · reported {c.reported}</div>
               </div>
-              <button className="primary" onClick={() => onSelectCrime(c.id)}>View</button>
+              <button className="primary" onClick={() => onSelectCrime(c.id, { lat: c.lat, lng: c.lng })}>View</button>
             </div>
           ))}
         </div>
@@ -197,8 +198,14 @@ export default function DispatchPanel({
           {units.map((u) => (
             <div key={u.id} className="marker-item">
               <div>
-                <strong>{u.name}</strong>
-                <div className="small">{u.status} · {selectedCrime ? `${(u.distance / 1000).toFixed(2)} km away` : ''}</div>
+                <button
+                  className="ghost"
+                  style={{ padding: 0, color: 'inherit', textAlign: 'left' }}
+                  onClick={() => onSelectUnit && onSelectUnit(selectedCrimeId, u)}
+                >
+                  <strong>{u.name}</strong>
+                  <div className="small">{u.status} · {selectedCrime ? `${(u.distance / 1000).toFixed(2)} km away` : ''}</div>
+                </button>
               </div>
               <button className="ghost" disabled={u.status !== 'available'} onClick={() => onAssign(selectedCrimeId, u.id)}>Dispatch</button>
             </div>

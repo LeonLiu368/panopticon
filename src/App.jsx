@@ -126,6 +126,17 @@ export default function App() {
     setTimeResult({ distance: route.distance, times: [{ mode: 'cruiser', duration: etaSeconds }] });
   };
 
+  // focus map on a unit from sidebar click
+  const focusUnit = (_crimeId, unit) => {
+    if (!unit) return;
+    setSelected({ lat: unit.lat, lng: unit.lng });
+  };
+  const focusCrime = (crimeId, loc) => {
+    const crime = crimeZones.find((c) => c.id === crimeId) || loc;
+    if (!crime) return;
+    setSelected({ lat: crime.lat, lng: crime.lng });
+  };
+
   const updateDispatchStatus = (dispatchId, status) => {
     setDispatches((d) => d.map((x) => (x.id === dispatchId ? { ...x, status } : x)));
   };
@@ -363,9 +374,14 @@ export default function App() {
           stats={dashboardStats}
           crimeZones={crimeZones}
           selectedCrimeId={selectedCrimeId}
-          onSelectCrime={setSelectedCrimeId}
+          onSelectCrime={(crimeId, locOrUnit) => {
+            setSelectedCrimeId(crimeId);
+            if (locOrUnit?.lat && locOrUnit?.lng) setSelected({ lat: locOrUnit.lat, lng: locOrUnit.lng });
+            else focusCrime(crimeId);
+          }}
           units={unitsByDistance}
           onAssign={assignDispatch}
+          onSelectUnit={(crimeId, unit) => focusUnit(crimeId, unit)}
           dispatches={dispatches}
           onUpdateDispatch={updateDispatchStatus}
         />

@@ -82,15 +82,40 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
 
     map.on('click', (e) => {
-      const label = prompt('Checkpoint label?', 'Checkpoint');
-      const markerData = {
-        id: crypto.randomUUID(),
-        lng: +e.lngLat.lng.toFixed(5),
-        lat: +e.lngLat.lat.toFixed(5),
-        label: label || 'Checkpoint',
-        priority: 'medium',
+      // simple on-map input via prompt-like div near cursor
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Checkpoint label';
+      Object.assign(input.style, {
+        position: 'absolute',
+        zIndex: 9999,
+        padding: '6px 8px',
+        border: '1px solid #00b4ff',
+        borderRadius: '6px',
+        background: '#0a0d14',
+        color: '#00b4ff',
+        fontSize: '12px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        left: `${e.point.x}px`,
+        top: `${e.point.y}px`,
+      });
+      mapRef.current.parentElement.appendChild(input);
+      input.focus();
+      input.onkeydown = (ev) => {
+        if (ev.key === 'Enter') {
+          const markerData = {
+            id: crypto.randomUUID(),
+            lng: +e.lngLat.lng.toFixed(5),
+            lat: +e.lngLat.lat.toFixed(5),
+            label: input.value || 'Checkpoint',
+            priority: 'medium',
+          };
+          input.remove();
+          onAddMarker?.(markerData);
+        } else if (ev.key === 'Escape') {
+          input.remove();
+        }
       };
-      onAddMarker?.(markerData);
     });
 
     map.on('error', (e) => {
@@ -297,8 +322,8 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       type: 'line',
       source: lineLayerId,
       paint: {
-        'line-color': '#f6c452',
-        'line-width': 2,
+        'line-color': '#3b82f6', // blue for dispatch path
+        'line-width': 2.5,
         'line-dasharray': [2, 2],
       },
     });
