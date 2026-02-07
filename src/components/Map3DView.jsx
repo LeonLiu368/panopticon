@@ -230,7 +230,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   }, [lines]);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
       <div className="section-title">
         <div className="flex">
           <h3 style={{ margin: 0 }}>3D Map (MapLibre)</h3>

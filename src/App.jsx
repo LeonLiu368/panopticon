@@ -200,7 +200,21 @@ export default function App() {
       <div className="top-bar">
         <div className="brand">
           <span className="badge"><span className="status-dot" />Live</span>
-          <h1>Metro Dispatch Console</h1>
+          <h1>PATROLOPS</h1>
+        </div>
+        <div className="header-stats">
+          <div className="stat-item">
+            <div className="stat-label">Active INC</div>
+            <div className="stat-value">{dashboardStats.openCalls}</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-label">Units Active</div>
+            <div className="stat-value">{dashboardStats.unitsActive}</div>
+          </div>
+          <div className="stat-item">
+            <div className="stat-label">Sys Status</div>
+            <div className="stat-value" style={{ fontSize: '0.9rem' }}>OPERATIONAL</div>
+          </div>
         </div>
         <div className="flex">
           <div className="pill">{mode === '3d' ? '3D MapLibre' : '2D Leaflet'}</div>
@@ -226,6 +240,7 @@ export default function App() {
           <VoiceControl onCommand={updateFromVoice} />
         </div>
       </div>
+      <div className="hazard-stripe" />
 
       <div className="card">
         <div className="search-bar">

@@ -212,7 +212,7 @@ export default function LeafletView({
   }, [myLocation]);
 
   return (
-    <div>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
       <div className="section-title">
         <div className="flex">
           <h3 style={{ margin: 0 }}>Leaflet Map</h3>

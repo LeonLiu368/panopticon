@@ -25,9 +25,13 @@ const parseCommand = (text) => {
 
 export default function VoiceControl({ onCommand }) {
   const recognitionRef = useRef(null);
+  const onCommandRef = useRef(onCommand);
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [lastTranscript, setLastTranscript] = useState('');
+
+  // Keep callback ref in sync without re-creating recognition
+  useEffect(() => { onCommandRef.current = onCommand; }, [onCommand]);
 
   useEffect(() => {
     const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -46,16 +50,19 @@ export default function VoiceControl({ onCommand }) {
         .join(' ');
       setLastTranscript(transcript);
       const action = parseCommand(transcript);
-      if (action && onCommand) onCommand(action);
+      if (action && onCommandRef.current) onCommandRef.current(action);
     };
 
     recognition.onend = () => setListening(false);
     recognitionRef.current = recognition;
-  }, [onCommand]);
+
+    return () => { recognition.stop(); };
+  }, []);
 
   const toggleListening = () => {
     if (!supported) return;
     if (!listening) {
+      setLastTranscript('');
       recognitionRef.current?.start();
       setListening(true);
     } else {
