@@ -5,6 +5,7 @@ import DispatchPanel from './components/DispatchPanel';
 import TranscriptRecorder from './components/TranscriptRecorder';
 import AIRecommendation from './components/AIRecommendation';
 import IncidentReport from './components/IncidentReport';
+import DaedalusAgent from './components/DaedalusAgent';
 import { haversineDistance, formatDuration } from './utils/geo';
 import { analyzeBodycamFrame, syncState, generateIncidentReport } from './services/api';
 import bodycamVideoSrc from '../media/StockBodycam.mp4';
@@ -568,6 +569,27 @@ export default function App() {
     finally { setReportLoading(false); }
   };
 
+  // Daedalus autonomous dispatch handler
+  const handleDaedalusDispatch = useCallback(async ({ unitId, targetId, targetType }) => {
+    if (unitId && targetId) {
+      await assignDispatch({ type: targetType || 'crime', id: targetId }, unitId);
+      if (targetType === 'crime' || !targetType) {
+        setSelectedTarget({ type: 'crime', id: targetId });
+        setSelectedCrimeId(targetId);
+      }
+    }
+  }, [assignDispatch]);
+
+  // Daedalus: add a new crime zone (fake incident generation)
+  const handleAddCrimeZone = useCallback((zone) => {
+    setCrimeZones((prev) => [...prev, zone]);
+  }, []);
+
+  // Daedalus: clear a dispatch (resolve incident)
+  const handleClearDispatch = useCallback((dispatchId) => {
+    updateDispatchStatus(dispatchId, 'cleared');
+  }, []);
+
   return (
     <>
     {loading && (
@@ -575,7 +597,25 @@ export default function App() {
         <div className="loading-ripple" />
         <div className="loading-ripple r2" />
         <div className="loading-ripple r3" />
-        <h1 className="loading-title">PATROLOPS</h1>
+        <h1 className="loading-title">
+          PANOPTIC
+          <svg className="panopticon-eye" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg">
+            <defs>
+              <radialGradient id="irisGradLoad" cx="50%" cy="50%" r="50%">
+                <stop offset="0%" stopColor="#fff" />
+                <stop offset="40%" stopColor="#ccc" />
+                <stop offset="100%" stopColor="#666" />
+              </radialGradient>
+            </defs>
+            <path d="M2 20 Q30 -4 58 20 Q30 44 2 20Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+            <ellipse cx="30" cy="20" rx="11" ry="11" fill="url(#irisGradLoad)" />
+            <circle cx="30" cy="20" r="5" fill="#000" />
+            <circle cx="33" cy="17" r="2" fill="rgba(255,255,255,0.6)" />
+            <path d="M2 20 Q30 -4 58 20" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+            <path d="M2 20 Q30 44 58 20" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+          </svg>
+          N
+        </h1>
         <div className="loading-subtitle">CIVIC.OPS.CONSOLE v2.1.4</div>
       </div>
     )}
@@ -583,7 +623,25 @@ export default function App() {
       <div className="top-bar">
         <div className="brand">
           <span className="badge"><span className="status-dot" />Live</span>
-          <h1>PATROLOPS</h1>
+          <h1>
+            PANOPTIC
+            <svg className="panopticon-eye eye-sm" viewBox="0 0 60 40" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <radialGradient id="irisGradHead" cx="50%" cy="50%" r="50%">
+                  <stop offset="0%" stopColor="#fff" />
+                  <stop offset="40%" stopColor="#ccc" />
+                  <stop offset="100%" stopColor="#666" />
+                </radialGradient>
+              </defs>
+              <path d="M2 20 Q30 -4 58 20 Q30 44 2 20Z" fill="none" stroke="currentColor" strokeWidth="2.5" />
+              <ellipse cx="30" cy="20" rx="11" ry="11" fill="url(#irisGradHead)" />
+              <circle cx="30" cy="20" r="5" fill="#000" />
+              <circle cx="33" cy="17" r="2" fill="rgba(255,255,255,0.6)" />
+              <path d="M2 20 Q30 -4 58 20" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+              <path d="M2 20 Q30 44 58 20" fill="none" stroke="currentColor" strokeWidth="1" opacity="0.3" />
+            </svg>
+            N
+          </h1>
         </div>
         <div className="header-stats">
           <div className="stat-item">
@@ -717,6 +775,17 @@ export default function App() {
       {showReport && (
         <IncidentReport report={currentReport} onClose={() => setShowReport(false)} />
       )}
+      {/* Daedalus Virtual Agent */}
+      <DaedalusAgent
+        units={units}
+        crimeZones={crimeZones}
+        dispatches={dispatches}
+        markers={markers}
+        onDispatch={handleDaedalusDispatch}
+        onAddCrimeZone={handleAddCrimeZone}
+        onClearDispatch={handleClearDispatch}
+        aiEnabled={aiEnabled}
+      />
       {/* Bodycam panel — Unit B4 at Shadyside Vandalism.
            Stays mounted (video keeps playing) while bodycamActive;
            hidden visually when the user closes the panel. */}

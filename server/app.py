@@ -1,4 +1,4 @@
-"""PATROLOPS Flask Backend — AI-powered dispatch with Dedalus SDK."""
+"""PANOPTICON Flask Backend — AI-powered dispatch with Dedalus SDK."""
 
 from flask import Flask, jsonify
 from flask_cors import CORS
@@ -20,7 +20,7 @@ def create_app():
 
     @app.route("/api/health")
     def health():
-        return jsonify({"status": "ok", "service": "patrolops-ai"})
+        return jsonify({"status": "ok", "service": "panopticon-ai"})
 
     return app
 
