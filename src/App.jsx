@@ -137,6 +137,9 @@ export default function App() {
     setUnits((list) => list.map((u) => (u.id === unitId ? { ...u, status: 'dispatched' } : u)));
     setSelected({ lat: dest.lat, lng: dest.lng });
     setTimeResult({ distance: route.distance, times: [{ mode: 'cruiser', duration: etaSeconds }] });
+    // keep UI state in sync with this dispatch
+    setSelectedTarget(target);
+    if (target.type === 'crime') setSelectedCrimeId(target.id);
   };
 
   const dispatchToMarker = async (markerId) => {
@@ -155,6 +158,39 @@ export default function App() {
     setSelectedTarget({ type: 'marker', id: markerId });
     await assignDispatch({ type: 'marker', id: markerId }, nearest.id);
   };
+
+  // Voice dispatch: find best matching unit and crime text and dispatch
+  const handleVoiceDispatch = useCallback(
+    async ({ unit: unitText, crime: crimeText }) => {
+      if (!unitText || !crimeText) return;
+      const sim = (a, b) => {
+        a = (a || '').toLowerCase(); b = (b || '').toLowerCase();
+        if (!a || !b) return 0;
+        if (a.includes(b) || b.includes(a)) return 1;
+        const makeBg = (s) => {
+          const r = [];
+          for (let i = 0; i < s.length - 1; i++) r.push(s.slice(i, i + 2));
+          return r;
+        };
+        const A = makeBg(a), B = makeBg(b);
+        let overlap = 0; const used = {};
+        A.forEach((bg) => { const idx = B.indexOf(bg); if (idx !== -1 && !used[idx]) { overlap++; used[idx] = true; } });
+        return (2 * overlap) / (A.length + B.length || 1);
+      };
+      const bestUnit = units
+        .map((u) => ({ u, score: sim(unitText, u.name) + (u.status === 'available' ? 0.2 : 0) }))
+        .sort((a, b) => b.score - a.score)[0]?.u;
+    const bestCrime = crimeZones
+      .map((c) => ({ c, score: sim(crimeText, c.name) }))
+      .sort((a, b) => b.score - a.score)[0]?.c;
+    if (!bestUnit || !bestCrime) return;
+      await assignDispatch({ type: 'crime', id: bestCrime.id }, bestUnit.id);
+      setSelectedTarget({ type: 'crime', id: bestCrime.id });
+      setSelectedCrimeId(bestCrime.id);
+      setSelected({ lat: bestUnit.lat, lng: bestUnit.lng });
+    },
+    [assignDispatch, crimeZones, units]
+  );
 
   // focus map on a unit from sidebar click
   const focusUnit = (_crimeId, unit) => {
@@ -479,7 +515,10 @@ export default function App() {
         />
       </div>
       {/* Floating voice FAB */}
-      <TranscriptRecorder onNavigate={handleVoiceNavigate} />
+      <TranscriptRecorder
+        onNavigate={handleVoiceNavigate}
+        onDispatchCommand={handleVoiceDispatch}
+      />
     </div>
   );
 }

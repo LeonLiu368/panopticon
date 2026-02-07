@@ -1,8 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 
 // Browser SpeechRecognition is fast and free; falls back to manual note entry.
-export default function TranscriptRecorder({ onNavigate }) {
+export default function TranscriptRecorder({ onNavigate, onDispatchCommand }) {
   const recognitionRef = useRef(null);
+  const downRef = useRef(false);
   const [supported, setSupported] = useState(true);
   const [listening, setListening] = useState(false);
   const [transcript, setTranscript] = useState('');
@@ -43,10 +44,16 @@ export default function TranscriptRecorder({ onNavigate }) {
 
   const handleCommand = (text) => {
     const lower = text.toLowerCase();
-    const match = lower.match(/(?:navigate|go) to (.+)/);
-    if (match && onNavigate) {
-      const target = match[1].trim();
+    const navMatch = lower.match(/(?:navigate|go) to (.+)/);
+    if (navMatch && onNavigate) {
+      const target = navMatch[1].trim();
       onNavigate(target);
+    }
+    const dispatchMatch = lower.match(/(?:dispatch|send)\s+(.+?)\s+to\s+(.+)/);
+    if (dispatchMatch && onDispatchCommand) {
+      const unitPhrase = dispatchMatch[1].trim();
+      const crimePhrase = dispatchMatch[2].trim();
+      onDispatchCommand({ unit: unitPhrase, crime: crimePhrase });
     }
   };
 
@@ -58,6 +65,46 @@ export default function TranscriptRecorder({ onNavigate }) {
     setListening(false);
     recognitionRef.current?.stop();
   };
+
+  // Spacebar PTT: hold space to listen, release to submit
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.repeat) return;
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (e.code === 'Space' && !downRef.current) {
+        downRef.current = true;
+        e.preventDefault();
+        if (!listening) {
+          setTranscript('');
+          recognitionRef.current?.start();
+          setListening(true);
+        }
+      }
+    };
+    const handleKeyUp = (e) => {
+      const tag = e.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (e.code === 'Space' && downRef.current) {
+        e.preventDefault();
+        downRef.current = false;
+        if (listening) {
+          recognitionRef.current?.stop();
+          setListening(false);
+          // allow any final result event to land
+          setTimeout(() => {
+            if (transcript.trim()) saveEntry();
+          }, 120);
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown, true);
+    window.addEventListener('keyup', handleKeyUp, true);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown, true);
+      window.removeEventListener('keyup', handleKeyUp, true);
+    };
+  }, [listening, transcript]);
 
   const expanded = listening || transcript.length > 0;
 

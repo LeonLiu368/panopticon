@@ -397,7 +397,7 @@ export default function Map3DView({
       <div className="section-title">
         <div className="flex">
           <h3 style={{ margin: 0 }}>3D Map (Mapbox GL)</h3>
-          <span className="pill">3D terrain · extruded buildings · click to add checkpoints</span>
+          <span className="pill">3D terrain · extruded buildings · click C add checkpoints</span>
         </div>
         <div className="badge">Style: {styleUrl.includes('mapbox://') ? 'Dark' : 'Custom'}</div>
       </div>
