@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import LeafletView from './components/LeafletView';
 import Map3DView from './components/Map3DView';
 import DispatchPanel from './components/DispatchPanel';
@@ -30,13 +30,18 @@ export default function App() {
   const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
   const [myLocation, setMyLocation] = useState(null);
 
-  const addMarker = (marker) => {
-    setMarkers((prev) => [...prev, marker]);
-  };
+  const handleMap3dError = useCallback(() => {
+    setMap3dOk(false);
+    setMode('2d');
+  }, []);
 
-  const removeMarker = (id) => {
+  const addMarker = useCallback((marker) => {
+    setMarkers((prev) => [...prev, marker]);
+  }, []);
+
+  const removeMarker = useCallback((id) => {
     setMarkers((prev) => prev.filter((m) => m.id !== id));
-  };
+  }, []);
 
   const updateFromVoice = (action) => {
     if (action.type === 'addMarker' && action.coords) {
@@ -217,7 +222,7 @@ export default function App() {
           </div>
         </div>
         <div className="flex">
-          <div className="pill">{mode === '3d' ? '3D MapLibre' : '2D Leaflet'}</div>
+          <div className="pill">{mode === '3d' ? '3D Mapbox' : '2D Leaflet'}</div>
           <button
             className="ghost"
             onClick={() => {
@@ -265,7 +270,7 @@ export default function App() {
             units={units}
             onSelectCrime={setSelectedCrimeId}
             lines={dispatchLines}
-            onError={() => { setMap3dOk(false); setMode('2d'); }}
+            onError={handleMap3dError}
           />
         ) : (
           <LeafletView

@@ -1,75 +1,118 @@
 import { useEffect, useRef } from 'react';
-const styleUrl = import.meta.env.VITE_MAP_STYLE || 'https://demotiles.maplibre.org/style.json';
+import mapboxgl from 'mapbox-gl';
+import 'mapbox-gl/dist/mapbox-gl.css';
+
+const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoidGhlZXphbm9ueW1vdXMiLCJhIjoiY21sYnFzbTNvMHJwdDNlcTNnbHE0MzFkOSJ9.8GIdITSkZv_aYV4arbAFhg';
+const styleUrl = import.meta.env.VITE_MAP_STYLE || 'mapbox://styles/mapbox/dark-v11';
 
 export default function Map3DView({ markers = [], crimeZones = [], units = [], selected, onAddMarker, onRemoveMarker, onSelectCrime, onError, lines = [] }) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
-  const glRef = useRef(null);
   const markerObjects = useRef({});
   const unitObjects = useRef({});
   const zoneLayers = useRef({});
+  const mapLoaded = useRef(false);
   const lineLayerId = 'dispatch-lines';
 
   useEffect(() => {
-    let mounted = true;
-    const init = async () => {
-      if (mapInstance.current) return;
-      if (!document.getElementById('maplibre-css')) {
-        const link = document.createElement('link');
-        link.id = 'maplibre-css';
-        link.rel = 'stylesheet';
-        link.href = 'https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.css';
-        document.head.appendChild(link);
-      }
-      let maplibregl;
-      try {
-        maplibregl = await import(/* @vite-ignore */ 'https://unpkg.com/maplibre-gl@4.1.2/dist/maplibre-gl.esm.js');
-      } catch (err) {
-        console.warn('Failed to load MapLibre', err);
-        onError?.(err);
-        return;
-      }
-      glRef.current = maplibregl;
-      if (!mounted) return;
-      const map = new maplibregl.Map({
+    if (mapInstance.current) return;
+
+    mapboxgl.accessToken = mapboxToken;
+
+    let map;
+    try {
+      map = new mapboxgl.Map({
         container: mapRef.current,
         style: styleUrl,
         center: [-79.9436, 40.4433], // CMU area
         zoom: 14,
         pitch: 60,
         bearing: 25,
+        attributionControl: false,
       });
-      map.addControl(new maplibregl.NavigationControl({ showCompass: true }));
-      map.on('load', () => {
-        if (map.getStyle().layers.some((l) => l.id === 'building')) {
-          map.setPaintProperty('building', 'fill-extrusion-height', ['get', 'render_height']);
-          map.setPaintProperty('building', 'fill-extrusion-base', ['get', 'render_min_height']);
-          map.setPaintProperty('building', 'fill-extrusion-opacity', 0.7);
-        }
-      });
-      map.on('click', (e) => {
-        const label = prompt('Checkpoint label?', 'Checkpoint');
-        const markerData = {
-          id: crypto.randomUUID(),
-          lng: +e.lngLat.lng.toFixed(5),
-          lat: +e.lngLat.lat.toFixed(5),
-          label: label || 'Checkpoint',
-          priority: 'medium',
-        };
-        onAddMarker?.(markerData);
-      });
-      mapInstance.current = map;
-    };
-    init();
-    return () => { mounted = false; };
-  }, [onAddMarker]);
+    } catch (err) {
+      console.warn('Failed to initialize Mapbox', err);
+      onError?.(err);
+      return;
+    }
 
-  // sync checkpoints markers
+    map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
+    map.addControl(new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'imperial' }), 'bottom-left');
+
+    map.on('load', () => {
+      mapLoaded.current = true;
+
+      // 3D terrain
+      map.addSource('mapbox-dem', {
+        type: 'raster-dem',
+        url: 'mapbox://mapbox.terrain-rgb',
+        tileSize: 512,
+        maxzoom: 14,
+      });
+      map.setTerrain({ source: 'mapbox-dem', exaggeration: 1.5 });
+
+      // 3D buildings
+      map.addLayer({
+        id: '3d-buildings',
+        source: 'composite',
+        'source-layer': 'building',
+        filter: ['==', 'extrude', 'true'],
+        type: 'fill-extrusion',
+        paint: {
+          'fill-extrusion-color': '#1a2535',
+          'fill-extrusion-height': ['get', 'height'],
+          'fill-extrusion-base': ['get', 'min_height'],
+          'fill-extrusion-opacity': 0.7,
+        },
+      });
+
+      // Sky / atmosphere
+      map.addLayer({
+        id: 'sky',
+        type: 'sky',
+        paint: {
+          'sky-type': 'atmosphere',
+          'sky-atmosphere-sun': [0.0, 0.0],
+          'sky-atmosphere-sun-intensity': 15,
+        },
+      });
+    });
+
+    map.on('click', (e) => {
+      const label = prompt('Checkpoint label?', 'Checkpoint');
+      const markerData = {
+        id: crypto.randomUUID(),
+        lng: +e.lngLat.lng.toFixed(5),
+        lat: +e.lngLat.lat.toFixed(5),
+        label: label || 'Checkpoint',
+        priority: 'medium',
+      };
+      onAddMarker?.(markerData);
+    });
+
+    map.on('error', (e) => {
+      console.warn('Mapbox error', e);
+    });
+
+    mapInstance.current = map;
+
+    return () => {
+      // Clean up all markers
+      Object.values(markerObjects.current).forEach((mk) => mk.remove());
+      markerObjects.current = {};
+      Object.values(unitObjects.current).forEach((mk) => mk.remove());
+      unitObjects.current = {};
+      zoneLayers.current = {};
+      mapLoaded.current = false;
+      map.remove();
+      mapInstance.current = null;
+    };
+  }, [onAddMarker, onError]);
+
+  // sync checkpoint markers
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
-    const maplibregl = glRef.current;
-    if (!maplibregl) return;
     Object.keys(markerObjects.current).forEach((id) => {
       if (!markers.find((m) => m.id === id)) {
         markerObjects.current[id].remove();
@@ -89,9 +132,9 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
         ev.stopPropagation();
         onRemoveMarker?.(m.id);
       };
-      const mk = new maplibregl.Marker(el)
+      const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([m.lng, m.lat])
-        .setPopup(new maplibregl.Popup({ offset: 12 }).setHTML(`<strong>${m.label}</strong><br/>${m.lat}, ${m.lng}`))
+        .setPopup(new mapboxgl.Popup({ offset: 12 }).setHTML(`<strong>${m.label}</strong><br/>${m.lat}, ${m.lng}`))
         .addTo(map);
       markerObjects.current[m.id] = mk;
     });
@@ -100,13 +143,12 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   // sync crime zones as circles
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
-    const maplibregl = glRef.current;
-    if (!maplibregl) return;
+    if (!map || !mapLoaded.current) return;
     Object.keys(zoneLayers.current).forEach((id) => {
       if (!crimeZones.find((c) => c.id === id)) {
-        map.removeLayer(id);
-        map.removeSource(id);
+        if (map.getLayer(`${id}-label`)) map.removeLayer(`${id}-label`);
+        if (map.getLayer(id)) map.removeLayer(id);
+        if (map.getSource(id)) map.removeSource(id);
         delete zoneLayers.current[id];
       }
     });
@@ -152,12 +194,10 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
   }, [crimeZones, onSelectCrime]);
 
-  // sync police units markers
+  // sync police unit markers
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
-    const maplibregl = glRef.current;
-    if (!maplibregl) return;
     Object.keys(unitObjects.current).forEach((id) => {
       if (!units.find((u) => u.id === id)) {
         unitObjects.current[id].remove();
@@ -173,9 +213,9 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       el.style.background = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
       el.style.boxShadow = '0 0 0 4px rgba(110,244,195,0.25)';
       el.title = `${u.name} · ${u.status}`;
-      const mk = new maplibregl.Marker(el)
+      const mk = new mapboxgl.Marker({ element: el })
         .setLngLat([u.lng, u.lat])
-        .setPopup(new maplibregl.Popup({ offset: 10 }).setHTML(`<strong>${u.name}</strong><br/>${u.status}`))
+        .setPopup(new mapboxgl.Popup({ offset: 10 }).setHTML(`<strong>${u.name}</strong><br/>${u.status}`))
         .addTo(map);
       unitObjects.current[u.id] = mk;
     });
@@ -191,15 +231,9 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
   // dispatch lines
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map) return;
-    const maplibregl = glRef.current;
-    if (!maplibregl) return;
-    if (map.getLayer(lineLayerId)) {
-      map.removeLayer(lineLayerId);
-    }
-    if (map.getSource(lineLayerId)) {
-      map.removeSource(lineLayerId);
-    }
+    if (!map || !mapLoaded.current) return;
+    if (map.getLayer(lineLayerId)) map.removeLayer(lineLayerId);
+    if (map.getSource(lineLayerId)) map.removeSource(lineLayerId);
     if (!lines.length) return;
     map.addSource(lineLayerId, {
       type: 'geojson',
@@ -233,10 +267,10 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
       <div className="section-title">
         <div className="flex">
-          <h3 style={{ margin: 0 }}>3D Map (MapLibre)</h3>
-          <span className="pill">Extruded buildings · click to add checkpoints</span>
+          <h3 style={{ margin: 0 }}>3D Map (Mapbox GL)</h3>
+          <span className="pill">3D terrain · extruded buildings · click to add checkpoints</span>
         </div>
-        <div className="badge">Style: {styleUrl.includes('demotiles') ? 'Demo' : 'Custom'}</div>
+        <div className="badge">Style: {styleUrl.includes('mapbox://') ? 'Dark' : 'Custom'}</div>
       </div>
       <div className="map-wrap" ref={mapRef} />
     </div>

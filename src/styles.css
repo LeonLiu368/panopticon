@@ -657,3 +657,93 @@ button.ghost:disabled {
     grid-template-columns: 1fr;
   }
 }
+
+/* ===== MAPBOX GL CUSTOMIZATIONS ════════════════ */
+
+.mapboxgl-map {
+  border: 2px solid rgba(0, 180, 255, 0.3);
+  border-radius: 0;
+  filter: saturate(1.2) contrast(1.1);
+}
+
+/* ── Popup ────────────────────────────────────── */
+.mapboxgl-popup-content {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%) !important;
+  border: 2px solid rgba(0, 180, 255, 0.4) !important;
+  border-left: 4px solid var(--accent-cyber) !important;
+  border-radius: 0 !important;
+  color: var(--text-primary) !important;
+  box-shadow:
+    0 0 20px rgba(0, 180, 255, 0.3),
+    inset 0 0 15px rgba(0, 180, 255, 0.05) !important;
+  padding: 10px !important;
+  font-family: 'Share Tech Mono', monospace !important;
+  max-width: 320px !important;
+}
+
+.mapboxgl-popup-content strong {
+  font-family: 'Orbitron', monospace !important;
+  color: var(--accent-cyber) !important;
+  text-shadow: 0 0 5px rgba(0, 180, 255, 0.5) !important;
+}
+
+.mapboxgl-popup-tip {
+  border-top-color: var(--bg-tertiary) !important;
+}
+
+.mapboxgl-popup-close-button {
+  color: var(--text-dim) !important;
+  font-size: 18px !important;
+  padding: 4px 8px !important;
+  transition: all 0.2s !important;
+}
+
+.mapboxgl-popup-close-button:hover {
+  color: var(--accent-cyber) !important;
+  background: rgba(0, 180, 255, 0.15) !important;
+}
+
+/* ── Navigation controls ─────────────────────── */
+.mapboxgl-ctrl-group {
+  background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%) !important;
+  border: 2px solid rgba(0, 180, 255, 0.3) !important;
+  border-radius: 0 !important;
+  box-shadow: 0 0 15px rgba(0, 180, 255, 0.2) !important;
+}
+
+.mapboxgl-ctrl-group button {
+  background: transparent !important;
+  border: none !important;
+  border-bottom: 1px solid rgba(0, 180, 255, 0.1) !important;
+  color: var(--text-primary) !important;
+  transition: all 0.2s !important;
+}
+
+.mapboxgl-ctrl-group button:last-child {
+  border-bottom: none !important;
+}
+
+.mapboxgl-ctrl-group button:hover {
+  background: rgba(0, 180, 255, 0.15) !important;
+}
+
+/* ── Scale control ───────────────────────────── */
+.mapboxgl-ctrl-scale {
+  background: var(--bg-secondary) !important;
+  border: 2px solid rgba(0, 180, 255, 0.3) !important;
+  border-radius: 0 !important;
+  color: var(--accent-cyber) !important;
+  font-family: 'Orbitron', monospace !important;
+  font-size: 0.6rem !important;
+  letter-spacing: 0.05em !important;
+  padding: 2px 6px !important;
+}
+
+/* ── Canvas cursor ───────────────────────────── */
+.mapboxgl-canvas-container {
+  cursor: crosshair !important;
+}
+
+.mapboxgl-canvas-container:active {
+  cursor: grabbing !important;
+}
