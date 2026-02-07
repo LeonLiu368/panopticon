@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 
-const tileUrl = import.meta.env.VITE_LEAFLET_TILES || 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+// Default to a keyless dark tile provider; allow override via VITE_LEAFLET_TILES
+const tileUrl =
+  import.meta.env.VITE_LEAFLET_TILES ||
+  'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png';
 const tileAttribution =
   import.meta.env.VITE_LEAFLET_ATTRIB ||
-  '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors';
+  '&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>';
 
 export default function LeafletView({
   markers,
@@ -62,7 +65,11 @@ export default function LeafletView({
         maxZoom: 20,
         worldCopyJump: true,
       });
-      L.tileLayer(tileUrl, { attribution: tileAttribution, maxZoom: 20 }).addTo(map);
+      L.tileLayer(tileUrl, {
+        attribution: tileAttribution,
+        maxZoom: 20,
+        detectRetina: true,
+      }).addTo(map);
       if (navigator.geolocation) {
         navigator.geolocation.getCurrentPosition(
           (pos) => {
