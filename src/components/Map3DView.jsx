@@ -1,18 +1,33 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import mapboxgl from 'mapbox-gl';
 import 'mapbox-gl/dist/mapbox-gl.css';
 
 const mapboxToken = import.meta.env.VITE_MAPBOX_TOKEN || 'pk.eyJ1IjoidGhlZXphbm9ueW1vdXMiLCJhIjoiY21sYnFzbTNvMHJwdDNlcTNnbHE0MzFkOSJ9.8GIdITSkZv_aYV4arbAFhg';
 const styleUrl = import.meta.env.VITE_MAP_STYLE || 'mapbox://styles/mapbox/dark-v11';
 
-export default function Map3DView({ markers = [], crimeZones = [], units = [], selected, onAddMarker, onRemoveMarker, onSelectCrime, onError, lines = [] }) {
+export default function Map3DView({
+  markers = [],
+  crimeZones = [],
+  units = [],
+  selected,
+  onAddMarker,
+  onRemoveMarker,
+  onSelectCrime,
+  onError,
+  lines = [],
+}) {
   const mapRef = useRef(null);
   const mapInstance = useRef(null);
   const markerObjects = useRef({});
   const unitObjects = useRef({});
-  const zoneLayers = useRef({});
+  const zoneLayers = useRef(false);
+  const pulseTimer = useRef(null);
   const mapLoaded = useRef(false);
+  const [mapReady, setMapReady] = useState(false);
+  const activeInputRef = useRef(null);
   const lineLayerId = 'dispatch-lines';
+  const keyListenerRef = useRef(null);
+  const lastPointerRef = useRef(null);
 
   useEffect(() => {
     if (mapInstance.current) return;
@@ -24,7 +39,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       map = new mapboxgl.Map({
         container: mapRef.current,
         style: styleUrl,
-        center: [-79.9436, 40.4433], // CMU area
+        center: [-79.9436, 40.4433],
         zoom: 14,
         pitch: 60,
         bearing: 25,
@@ -36,11 +51,19 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       return;
     }
 
+    map.scrollZoom.enable();
+    map.boxZoom.enable();
+    map.dragPan.enable();
+    map.dragRotate.enable();
+    map.keyboard.enable();
+    map.doubleClickZoom.enable();
+
     map.addControl(new mapboxgl.NavigationControl({ showCompass: true }), 'top-right');
     map.addControl(new mapboxgl.ScaleControl({ maxWidth: 100, unit: 'imperial' }), 'bottom-left');
 
     map.on('load', () => {
       mapLoaded.current = true;
+      setMapReady(true);
 
       // 3D terrain
       map.addSource('mapbox-dem', {
@@ -78,17 +101,73 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       });
     });
 
-    map.on('click', (e) => {
-      const label = prompt('Checkpoint label?', 'Checkpoint');
-      const markerData = {
-        id: crypto.randomUUID(),
-        lng: +e.lngLat.lng.toFixed(5),
-        lat: +e.lngLat.lat.toFixed(5),
-        label: label || 'Checkpoint',
-        priority: 'medium',
+    // Press C to spawn inline checkpoint input at cursor
+    const spawnInputAt = (point, lngLat) => {
+      document.querySelectorAll('.mapbox-checkpoint-input').forEach((el) => el.remove());
+      activeInputRef.current = null;
+      const input = document.createElement('input');
+      input.type = 'text';
+      input.placeholder = 'Checkpoint label';
+      Object.assign(input.style, {
+        position: 'absolute',
+        zIndex: '9999',
+        padding: '6px 8px',
+        border: '1px solid #00b4ff',
+        borderRadius: '6px',
+        background: '#0a0d14',
+        color: '#00b4ff',
+        fontSize: '12px',
+        boxShadow: '0 4px 12px rgba(0,0,0,0.4)',
+        left: `${point.x}px`,
+        top: `${point.y}px`,
+      });
+      input.className = 'mapbox-checkpoint-input';
+      mapRef.current.parentElement.appendChild(input);
+      input.focus();
+      activeInputRef.current = input;
+      const cleanup = () => {
+        input.remove();
+        activeInputRef.current = null;
+        document.removeEventListener('mousedown', outsideClose, true);
       };
-      onAddMarker?.(markerData);
+      const outsideClose = (evt) => {
+        if (evt.target !== input) cleanup();
+      };
+      document.addEventListener('mousedown', outsideClose, true);
+      input.onkeydown = (ev) => {
+        if (ev.key === 'Enter') {
+          const markerData = {
+            id: crypto.randomUUID(),
+            lng: +lngLat.lng.toFixed(5),
+            lat: +lngLat.lat.toFixed(5),
+            label: input.value || 'Checkpoint',
+            priority: 'medium',
+          };
+          cleanup();
+          onAddMarker?.(markerData);
+        } else if (ev.key === 'Escape') {
+          cleanup();
+        }
+      };
+    };
+
+    map.on('mousemove', (e) => {
+      lastPointerRef.current = { point: e.point, lngLat: e.lngLat };
     });
+
+    const handleKey = (ev) => {
+      const tag = ev.target?.tagName?.toLowerCase();
+      if (tag === 'input' || tag === 'textarea') return;
+      if (ev.key?.toLowerCase() !== 'c') return;
+      const fallback = map.getCenter();
+      const pointer = lastPointerRef.current;
+      const lngLat = pointer?.lngLat || fallback;
+      const point = pointer?.point || map.project(fallback);
+      spawnInputAt(point, lngLat);
+    };
+
+    window.addEventListener('keydown', handleKey);
+    keyListenerRef.current = handleKey;
 
     map.on('error', (e) => {
       console.warn('Mapbox error', e);
@@ -97,19 +176,22 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     mapInstance.current = map;
 
     return () => {
-      // Clean up all markers
       Object.values(markerObjects.current).forEach((mk) => mk.remove());
       markerObjects.current = {};
       Object.values(unitObjects.current).forEach((mk) => mk.remove());
       unitObjects.current = {};
-      zoneLayers.current = {};
+      zoneLayers.current = false;
       mapLoaded.current = false;
       map.remove();
       mapInstance.current = null;
+      if (keyListenerRef.current) {
+        window.removeEventListener('keydown', keyListenerRef.current);
+        keyListenerRef.current = null;
+      }
     };
   }, [onAddMarker, onError]);
 
-  // sync checkpoint markers
+  // Sync checkpoint markers
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
@@ -140,61 +222,110 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
   }, [markers, onRemoveMarker]);
 
-  // sync crime zones as circles
+  // Crime zones: single GeoJSON source with pulsing halo
   useEffect(() => {
     const map = mapInstance.current;
-    if (!map || !mapLoaded.current) return;
-    Object.keys(zoneLayers.current).forEach((id) => {
-      if (!crimeZones.find((c) => c.id === id)) {
-        if (map.getLayer(`${id}-label`)) map.removeLayer(`${id}-label`);
-        if (map.getLayer(id)) map.removeLayer(id);
-        if (map.getSource(id)) map.removeSource(id);
-        delete zoneLayers.current[id];
-      }
-    });
-    crimeZones.forEach((c) => {
-      if (zoneLayers.current[c.id]) return;
-      map.addSource(c.id, {
-        type: 'geojson',
-        data: {
-          type: 'Feature',
-          geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
-          properties: c,
-        },
-      });
-      map.addLayer({
-        id: c.id,
-        type: 'circle',
-        source: c.id,
-        paint: {
-          'circle-radius': 14,
-          'circle-color': '#ff4d4d',
-          'circle-stroke-color': '#b30000',
-          'circle-stroke-width': 1.5,
-          'circle-opacity': 0.5,
-        },
-      });
-      map.addLayer({
-        id: `${c.id}-label`,
-        type: 'symbol',
-        source: c.id,
-        layout: {
-          'text-field': ['get', 'name'],
-          'text-size': 12,
-          'text-offset': [0, 1.2],
-        },
-        paint: {
-          'text-color': '#ffecec',
-          'text-halo-color': '#b30000',
-          'text-halo-width': 1,
-        },
-      });
-      map.on('click', c.id, () => onSelectCrime?.(c.id));
-      zoneLayers.current[c.id] = true;
-    });
-  }, [crimeZones, onSelectCrime]);
+    if (!map || !mapReady) return;
 
-  // sync police unit markers
+    const sourceId = 'crime-zones';
+    const layerId = 'crime-zones-circles';
+    const pulseId = 'crime-zones-pulse';
+    const labelId = 'crime-zones-labels';
+
+    const riskRadius = (risk) => {
+      switch ((risk || '').toLowerCase()) {
+        case 'critical': return 52;
+        case 'high': return 44;
+        case 'medium': return 36;
+        default: return 30;
+      }
+    };
+    const featureCollection = {
+      type: 'FeatureCollection',
+      features: crimeZones.map((c) => ({
+        type: 'Feature',
+        properties: { ...c, name: c.name || c.id, riskRadius: riskRadius(c.risk) },
+        geometry: { type: 'Point', coordinates: [c.lng, c.lat] },
+      })),
+    };
+
+    if (map.getSource(sourceId)) {
+      map.getSource(sourceId).setData(featureCollection);
+    } else {
+      map.addSource(sourceId, { type: 'geojson', data: featureCollection });
+    }
+
+    const ensureLayer = (id, def) => {
+      if (!map.getLayer(id)) map.addLayer(def);
+    };
+
+    ensureLayer(layerId, {
+      id: layerId,
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': ['get', 'riskRadius'],
+        'circle-color': '#ff4d4d',
+        'circle-stroke-color': '#b30000',
+        'circle-stroke-width': 1.5,
+        'circle-opacity': 0.55,
+      },
+    });
+
+    ensureLayer(pulseId, {
+      id: pulseId,
+      type: 'circle',
+      source: sourceId,
+      paint: {
+        'circle-radius': ['*', ['get', 'riskRadius'], 2.2],
+        'circle-color': '#ff2d2d',
+        'circle-opacity': 0.12,
+      },
+    });
+
+    ensureLayer(labelId, {
+      id: labelId,
+      type: 'symbol',
+      source: sourceId,
+      layout: {
+        'text-field': ['get', 'name'],
+        'text-size': 12,
+        'text-offset': [0, 1.2],
+      },
+      paint: {
+        'text-color': '#ffecec',
+        'text-halo-color': '#b30000',
+        'text-halo-width': 1,
+      },
+    });
+
+    // Click handler
+    map.off('click', layerId);
+    map.on('click', layerId, (e) => {
+      const id = e.features?.[0]?.properties?.id || e.features?.[0]?.properties?.name;
+      if (id) onSelectCrime?.(id);
+    });
+
+    // Pulse animation
+    if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
+    const animate = () => {
+      const t = Date.now() / 500;
+      const scale = 1 + 0.35 * Math.sin(t);
+      if (map.getLayer(pulseId)) {
+        map.setPaintProperty(pulseId, 'circle-radius', ['*', ['get', 'riskRadius'], 2.2 * scale]);
+        map.setPaintProperty(pulseId, 'circle-opacity', 0.05 + 0.1 * (0.5 + 0.5 * Math.sin(t)));
+      }
+      pulseTimer.current = requestAnimationFrame(animate);
+    };
+    animate();
+
+    zoneLayers.current = true;
+    return () => {
+      if (pulseTimer.current) cancelAnimationFrame(pulseTimer.current);
+    };
+  }, [crimeZones, onSelectCrime, mapReady]);
+
+  // Sync police unit markers
   useEffect(() => {
     const map = mapInstance.current;
     if (!map) return;
@@ -205,12 +336,20 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       }
     });
     units.forEach((u) => {
-      if (unitObjects.current[u.id]) return;
+      const color = u.status === 'dispatched' ? '#f6c452' : u.status === 'on_scene' ? '#ff6b6b' : '#6ef4c3';
+      if (unitObjects.current[u.id]) {
+        unitObjects.current[u.id].setLngLat([u.lng, u.lat]);
+        const el = unitObjects.current[u.id].getElement();
+        el.style.background = color;
+        el.title = `${u.name} · ${u.status}`;
+        unitObjects.current[u.id].getPopup()?.setHTML(`<strong>${u.name}</strong><br/>${u.status}`);
+        return;
+      }
       const el = document.createElement('div');
       el.style.width = '16px';
       el.style.height = '16px';
       el.style.borderRadius = '4px';
-      el.style.background = u.status === 'dispatched' ? '#f6c452' : '#6ef4c3';
+      el.style.background = color;
       el.style.boxShadow = '0 0 0 4px rgba(110,244,195,0.25)';
       el.title = `${u.name} · ${u.status}`;
       const mk = new mapboxgl.Marker({ element: el })
@@ -221,14 +360,14 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
     });
   }, [units]);
 
-  // fly to selection
+  // Fly to selection
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !selected) return;
     map.flyTo({ center: [selected.lng, selected.lat], zoom: 15, pitch: 60, speed: 0.9, curve: 1.6 });
   }, [selected]);
 
-  // dispatch lines
+  // Dispatch lines (multi-point road routes)
   useEffect(() => {
     const map = mapInstance.current;
     if (!map || !mapLoaded.current) return;
@@ -243,10 +382,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
           type: 'Feature',
           geometry: {
             type: 'LineString',
-            coordinates: [
-              [l.from.lng, l.from.lat],
-              [l.to.lng, l.to.lat],
-            ],
+            coordinates: (l.coords || []).map((p) => [p.lng, p.lat]),
           },
         })),
       },
@@ -256,8 +392,8 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       type: 'line',
       source: lineLayerId,
       paint: {
-        'line-color': '#f6c452',
-        'line-width': 2,
+        'line-color': '#3b82f6',
+        'line-width': 2.5,
         'line-dasharray': [2, 2],
       },
     });
@@ -268,7 +404,7 @@ export default function Map3DView({ markers = [], crimeZones = [], units = [], s
       <div className="section-title">
         <div className="flex">
           <h3 style={{ margin: 0 }}>3D Map (Mapbox GL)</h3>
-          <span className="pill">3D terrain · extruded buildings · click to add checkpoints</span>
+          <span className="pill">3D terrain · extruded buildings · press C to add checkpoints</span>
         </div>
         <div className="badge">Style: {styleUrl.includes('mapbox://') ? 'Dark' : 'Custom'}</div>
       </div>

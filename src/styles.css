@@ -244,13 +244,7 @@ body::after {
   border: 2px solid rgba(0, 180, 255, 0.3);
   border-radius: 0;
   background: #060a14;
-  filter: saturate(1.2) contrast(1.1);
-}
-
-.maplibregl-map {
-  border: 2px solid rgba(0, 180, 255, 0.3);
-  border-radius: 0;
-  filter: saturate(1.2) contrast(1.1);
+  filter: saturate(1.2) contrast(1.6);
 }
 
 /* ── Checkpoint / marker icons ────────────────── */
@@ -288,6 +282,38 @@ body::after {
   letter-spacing: 0.05em;
   box-shadow: 0 0 10px rgba(255, 0, 68, 0.5);
   text-transform: uppercase;
+}
+
+.crime-pin-icon {
+  display: grid;
+  place-items: center;
+}
+.crime-pin-head {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #ff3b30;
+  border: 2px solid #b60000;
+  box-shadow: 0 0 12px rgba(255, 59, 48, 0.55);
+}
+.crime-pin-stem {
+  width: 2px;
+  height: 10px;
+  background: #b60000;
+  margin-top: -2px;
+  border-radius: 2px;
+}
+
+.danger-zone {
+  animation: dangerPulse 1.6s ease-in-out infinite;
+}
+.danger-pulse {
+  animation: dangerPulse 1.6s ease-in-out infinite;
+}
+@keyframes dangerPulse {
+  0% { opacity: 0.35; }
+  50% { opacity: 0.65; }
+  100% { opacity: 0.35; }
 }
 
 /* ── Search bar ───────────────────────────────── */
@@ -413,6 +439,90 @@ button.ghost:disabled {
   opacity: 0.35;
   cursor: not-allowed;
   transform: none;
+}
+
+/* ── Dispatch button ─────────────────────────── */
+button.dispatch {
+  background: rgba(59, 130, 246, 0.12);
+  border: 1.5px solid rgba(59, 130, 246, 0.6);
+  color: #bfdbfe;
+  font-weight: 700;
+  border-radius: 10px;
+  box-shadow: 0 0 12px rgba(59, 130, 246, 0.35);
+}
+button.dispatch:hover {
+  background: rgba(59, 130, 246, 0.22);
+  border-color: rgba(59, 130, 246, 0.9);
+  box-shadow: 0 0 14px rgba(59, 130, 246, 0.45);
+}
+
+/* ── Floating voice FAB ──────────────────────── */
+.voice-fab {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2200;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+.voice-fab.mic > button {
+  border-radius: 999px;
+  padding: 14px 16px;
+  font-size: 18px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.35);
+}
+.voice-fab .mic-button {
+  background: radial-gradient(circle at 30% 30%, #4fb4ff 0%, #0d6adf 60%, #084a9e 100%);
+  border: 2px solid #75c7ff;
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  box-shadow:
+    0 12px 28px rgba(0, 110, 220, 0.45),
+    inset 0 0 12px rgba(255,255,255,0.08);
+  transition: transform 150ms ease, box-shadow 150ms ease, background 150ms ease;
+}
+.voice-fab .mic-button svg {
+  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.25));
+}
+.voice-fab .mic-button:hover {
+  transform: translateY(-2px) scale(1.05);
+  box-shadow:
+    0 16px 36px rgba(0, 110, 220, 0.6),
+    inset 0 0 16px rgba(255,255,255,0.12);
+}
+.voice-fab .mic-button.live {
+  background: radial-gradient(circle at 40% 40%, #7fd3ff 0%, #0f8bff 60%, #0a5bcc 100%);
+  border-color: #b9e5ff;
+  box-shadow:
+    0 16px 38px rgba(0, 139, 255, 0.7),
+    0 0 18px rgba(0, 200, 255, 0.4);
+}
+.voice-fab-panel {
+  width: 280px;
+  background: rgba(0,0,0,0.65);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 10px;
+  box-shadow: 0 16px 40px rgba(0,0,0,0.45);
+}
+.voice-fab textarea {
+  width: 100%;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(0, 180, 255, 0.25);
+  color: var(--text-primary);
+  border-radius: 8px;
+  padding: 8px;
+}
+.voice-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 /* ── Grid helpers ─────────────────────────────── */
