@@ -67,27 +67,6 @@ VITE_MAPBOX_TOKEN=your_mapbox_token
 DEDALUS_API_KEY=your_dedalus_key
 ```
 
-## Dedalus Integration
-
-### Tool Calling Prize
-
-6 custom local tools the AI agent can invoke:
-
-- `list_available_units()` — all unit positions and status
-- `get_unit_status(unit_id)` — single unit details
-- `get_crime_zone_details(zone_id)` — incident severity and location
-- `find_nearest_unit(target_id, unit_type)` — spatial proximity with type filtering
-- `dispatch_unit(unit_id, target_id)` — execute dispatch, return structured JSON
-- `navigate_to_location(target_name)` — fuzzy-match and return coordinates
-
-### Multimodal Prize
-
-Model handoffs route tasks to the right LLM:
-
-- **GPT-4o-mini** — fast dispatch parsing and tool execution
-- **Claude Sonnet** — complex reasoning and report generation
-- **Claude Vision** — bodycam frame analysis
-
 ## Voice Commands
 
 Speak naturally while holding spacebar:
