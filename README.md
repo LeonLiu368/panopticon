@@ -1,6 +1,6 @@
 # PANOPTICON
 
-AI-powered law enforcement command & control console. Built for TartanHacks 2026.
+AI-powered law enforcement command & control console. 
 
 ## What it does
 
