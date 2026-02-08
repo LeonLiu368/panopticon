@@ -6,6 +6,9 @@ AI-powered law enforcement command & control console. Built for TartanHacks 2026
 
 PANOPTICON is a real-time police dispatch system where dispatchers speak natural language commands and an AI agent parses intent, selects the optimal unit, and executes the dispatch. A dual-map system provides 2D tactical and 3D immersive views with live unit tracking along real road routes. The autonomous DAEDALUS agent independently generates incidents, dispatches units by severity priority, and resolves cases — all with a transparent annotation feed.
 
+# Video Demo
+https://youtu.be/WWkuHKEKlr4
+
 ## Features
 
 - **Voice Dispatch** — Hold spacebar and speak ("send K9 to the robbery downtown"). Dedalus SDK parses the command and dispatches the best unit.
