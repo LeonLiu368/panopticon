@@ -52,11 +52,18 @@ export default function App() {
     { id: 'u-17', name: 'Bike Squad 4', lat: 40.4580, lng: -79.9185, status: 'available' },
   ]);
   const [dispatches, setDispatches] = useState([]);
-  const [selectedCrimeId, setSelectedCrimeId] = useState('cz-01');
-  const [selectedTarget, setSelectedTarget] = useState({ type: 'crime', id: 'cz-01' });
+  const [selectedCrimeId, setSelectedCrimeId] = useState('cz-02');
+  const [selectedTarget, setSelectedTarget] = useState({ type: 'crime', id: 'cz-02' });
   const [myLocation, setMyLocation] = useState(null);
   const [bodycamActive, setBodycamActive] = useState(false);
   const [bodycamOpen, setBodycamOpen] = useState(false);
+  const [bodycamTargets, setBodycamTargets] = useState([]); // Leon -> Cohon, B4 -> Shadyside
+  const [bodycamCaption, setBodycamCaption] = useState('');
+  const prevBodycamActive = useRef(false);
+  const bodycamVideoRef = useRef(null);
+  const bodycamStreamRef = useRef(null);
+  const bodycamCaptionTimer = useRef(null);
+  const [bodycamFallback, setBodycamFallback] = useState(false);
   const [panelPos, setPanelPos] = useState(() => ({
     x: window.innerWidth - 364,
     y: window.innerHeight - 304,
@@ -100,14 +107,115 @@ export default function App() {
     });
   }, [myLocation]);
 
-  // Detect when Unit B4 arrives at Shadyside Vandalism → activate bodycam
+  // Detect arrivals: Leon -> Cohon (cz-02) and B4 -> Shadyside (cz-08) → activate bodycam
   useEffect(() => {
-    const arrived = dispatches.some(
+    const leonMatch = (u) => u && (u.id === 'u-standby' || (u.name || '').toLowerCase().includes('leon'));
+    const leonArrived = dispatches.some(
+      (d) => leonMatch(units.find((u) => u.id === d.unitId)) && d.crimeId === 'cz-02' && d.status === 'arrived'
+    );
+    const b4Arrived = dispatches.some(
       (d) => d.unitId === 'u-12' && d.crimeId === 'cz-08' && d.status === 'arrived'
     );
-    setBodycamActive(arrived);
-    if (!arrived) setBodycamOpen(false);
-  }, [dispatches]);
+    const targets = [];
+    if (leonArrived) {
+      const cohon = crimeZones.find((c) => c.id === 'cz-02');
+      targets.push(cohon ? { lat: cohon.lat, lng: cohon.lng } : { lat: 40.4431, lng: -79.9425 });
+    }
+    if (b4Arrived) {
+      const shadyside = crimeZones.find((c) => c.id === 'cz-08');
+      targets.push(shadyside ? { lat: shadyside.lat, lng: shadyside.lng } : { lat: 40.4548, lng: -79.9355 });
+    }
+    if (targets.length) {
+      setBodycamTargets(targets);
+      setBodycamActive(true);
+    } else {
+      setBodycamActive(false);
+      setBodycamTargets([]);
+      setBodycamOpen(false);
+      setBodycamCaption('');
+    }
+  }, [dispatches, units, crimeZones]);
+
+  // Auto-open only on new activation edge (prevents reopen after manual close)
+  useEffect(() => {
+    if (bodycamActive && !prevBodycamActive.current) {
+      setBodycamOpen(true);
+    }
+    prevBodycamActive.current = bodycamActive;
+  }, [bodycamActive]);
+
+  // Drive bodycam panel video with real camera; fall back to stock clip on failure
+  useEffect(() => {
+    const attachStream = async () => {
+      if (!bodycamActive || !bodycamOpen) return;
+      try {
+        if (!bodycamStreamRef.current) {
+          bodycamStreamRef.current = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+        }
+        if (bodycamVideoRef.current) {
+          bodycamVideoRef.current.srcObject = bodycamStreamRef.current;
+          bodycamVideoRef.current.removeAttribute('src');
+          await bodycamVideoRef.current.play().catch(() => {});
+        }
+        setBodycamFallback(false);
+      } catch (err) {
+        setBodycamFallback(true);
+        if (bodycamVideoRef.current) {
+          bodycamVideoRef.current.srcObject = null;
+          bodycamVideoRef.current.src = bodycamVideoSrc;
+          bodycamVideoRef.current.play().catch(() => {});
+        }
+      }
+    };
+    attachStream();
+    return () => {
+      if (bodycamVideoRef.current) {
+        bodycamVideoRef.current.srcObject = null;
+      }
+      if (bodycamStreamRef.current) {
+        bodycamStreamRef.current.getTracks().forEach((t) => t.stop());
+        bodycamStreamRef.current = null;
+      }
+      if (bodycamCaptionTimer.current) {
+        clearInterval(bodycamCaptionTimer.current);
+        bodycamCaptionTimer.current = null;
+      }
+      setBodycamCaption('');
+    };
+  }, [bodycamActive, bodycamOpen]);
+
+  // Lightweight frame captioning loop using analyzeBodycamFrame service
+  useEffect(() => {
+    if (!bodycamActive || !bodycamOpen || !bodycamVideoRef.current) return;
+    const video = bodycamVideoRef.current;
+    let canvas = null;
+    const tick = async () => {
+      try {
+        if (!video.videoWidth || !video.videoHeight) return;
+        if (!canvas) canvas = document.createElement('canvas');
+        const w = 320;
+        const h = Math.max(180, Math.round((video.videoHeight / video.videoWidth) * w));
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, w, h);
+        const blob = await new Promise((res) => canvas.toBlob(res, 'image/jpeg', 0.7));
+        if (!blob) return;
+        const file = new File([blob], 'frame.jpg', { type: 'image/jpeg' });
+        const resp = await analyzeBodycamFrame(file);
+        if (resp?.caption) setBodycamCaption(resp.caption);
+      } catch (err) {
+        // ignore errors to keep UI smooth
+      }
+    };
+    bodycamCaptionTimer.current = setInterval(tick, 3500);
+    return () => {
+      if (bodycamCaptionTimer.current) {
+        clearInterval(bodycamCaptionTimer.current);
+        bodycamCaptionTimer.current = null;
+      }
+    };
+  }, [bodycamActive, bodycamOpen]);
 
   const addMarker = useCallback((marker) => {
     setMarkers((prev) => [...prev, marker]);
@@ -707,14 +815,16 @@ export default function App() {
             onAddMarker={addMarker}
             onRemoveMarker={removeMarker}
             selected={selected}
-            crimeZones={crimeZones}
-            units={units}
-            onSelectCrime={setSelectedCrimeId}
-            lines={dispatchLines}
-            onError={handleMap3dError}
-            bodycamActive={bodycamActive}
-            onBodycamClick={() => setBodycamOpen(true)}
-          />
+          crimeZones={crimeZones}
+          units={units}
+          onSelectCrime={setSelectedCrimeId}
+          lines={dispatchLines}
+          onError={handleMap3dError}
+          bodycamActive={bodycamActive}
+          bodycamTargets={bodycamTargets}
+          onBodycamClick={() => setBodycamOpen(true)}
+          onBodycamCaption={(text) => setBodycamCaption(text || '')}
+        />
         ) : (
           <LeafletView
             markers={markers}
@@ -814,7 +924,18 @@ export default function App() {
             <button className="ghost" onClick={() => setBodycamOpen(false)}>X</button>
           </div>
           <div style={{ position: 'relative' }}>
-            <video src={bodycamVideoSrc} autoPlay loop muted playsInline className="bodycam-video" />
+            <video
+              ref={bodycamVideoRef}
+              src={bodycamFallback ? bodycamVideoSrc : undefined}
+              autoPlay
+              loop
+              muted
+              playsInline
+              className="bodycam-video"
+            />
+            {bodycamCaption && (
+              <div className="bodycam-caption">{bodycamCaption}</div>
+            )}
             {(aiAnalysis || aiAnalyzing) && (
               <div className="bodycam-ai-overlay">
                 {aiAnalyzing && !aiAnalysis && <div className="bodycam-ai-loading">AI Analyzing...</div>}

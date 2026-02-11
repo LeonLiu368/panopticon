@@ -1207,6 +1207,20 @@ button.dispatch:hover {
   font-size: 0.65rem;
   flex-shrink: 0;
 }
+.bodycam-caption {
+  position: absolute;
+  bottom: 12px;
+  left: 12px;
+  right: 12px;
+  padding: 8px 10px;
+  background: rgba(0, 0, 0, 0.6);
+  color: #e8f4ff;
+  font-size: 0.72rem;
+  border-radius: 8px;
+  backdrop-filter: blur(2px);
+  pointer-events: none;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.35);
+}
 .bodycam-resize-handle {
   position: absolute;
   bottom: 0;

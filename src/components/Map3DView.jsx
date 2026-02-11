@@ -16,6 +16,7 @@ export default function Map3DView({
   onError,
   lines = [],
   bodycamActive = false,
+  bodycamTargets = [],
   onBodycamClick,
 }) {
   const mapRef = useRef(null);
@@ -28,7 +29,7 @@ export default function Map3DView({
   const [mapReady, setMapReady] = useState(false);
   const activeInputRef = useRef(null);
   const lineLayerId = 'dispatch-lines';
-  const bodycamPopupRef = useRef(null);
+  const bodycamPopupRef = useRef([]);
   const keyListenerRef = useRef(null);
   const lastPointerRef = useRef(null);
 
@@ -430,25 +431,25 @@ export default function Map3DView({
     });
   }, [lines]);
 
-  // "Bodycam Active" popup at Shadyside Vandalism when Unit B4 arrives
+  // "Bodycam Active" popup(s) at active targets (Leon->Cohon, B4->Shadyside)
   useEffect(() => {
     const map = mapInstance.current;
-    if (bodycamPopupRef.current) {
-      bodycamPopupRef.current.remove();
-      bodycamPopupRef.current = null;
-    }
-    if (!map || !bodycamActive) return;
-    const el = document.createElement('div');
-    el.className = 'bodycam-tag';
-    el.innerHTML = '<span class="bodycam-tag-dot"></span> Bodycam Active';
-    el.onclick = () => onBodycamClick?.();
-    const popup = new mapboxgl.Popup({ offset: 30, closeButton: false, closeOnClick: false })
-      .setLngLat([-79.9355, 40.4548])
-      .setDOMContent(el)
-      .addTo(map);
-    bodycamPopupRef.current = popup;
-    return () => popup.remove();
-  }, [bodycamActive, onBodycamClick]);
+    bodycamPopupRef.current.forEach((p) => p.remove());
+    bodycamPopupRef.current = [];
+    if (!map || !bodycamActive || !bodycamTargets.length) return;
+    bodycamTargets.forEach((target) => {
+      const el = document.createElement('div');
+      el.className = 'bodycam-tag';
+      el.innerHTML = '<span class="bodycam-tag-dot"></span> Bodycam Active';
+      el.onclick = () => onBodycamClick?.();
+      const popup = new mapboxgl.Popup({ offset: 30, closeButton: false, closeOnClick: false })
+        .setLngLat([target.lng, target.lat])
+        .setDOMContent(el)
+        .addTo(map);
+      bodycamPopupRef.current.push(popup);
+    });
+    return () => bodycamPopupRef.current.forEach((p) => p.remove());
+  }, [bodycamActive, bodycamTargets, onBodycamClick]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: '1 1 0', minHeight: 0 }}>
