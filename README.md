@@ -1,47 +1,115 @@
-# Metro Dispatch Console
+# PANOPTICON
 
-A lightweight React + Vite prototype for a police dispatch console featuring:
-- 3D map (MapLibre) with click-to-place and click-to-delete markers
-- Dispatch dashboard with quick stats and ETA calculator
-- Voice control using Web Speech API for add/remove/navigate commands
-- Camera access (mocked fallback) and ability to show street feed URLs
+AI-powered law enforcement command & control console. 
 
-## Getting started
+Built by Ruchir Talasu and Leon Liu.
+
+## What it does
+
+PANOPTICON is a real-time police dispatch system where dispatchers speak natural language commands and an AI agent parses intent, selects the optimal unit, and executes the dispatch. A dual-map system provides 2D tactical and 3D immersive views with live unit tracking along real road routes. The autonomous DAEDALUS agent independently generates incidents, dispatches units by severity priority, and resolves cases — all with a transparent annotation feed.
+
+# Video Demo
+https://youtu.be/WWkuHKEKlr4
+
+## Features
+
+- **Voice Dispatch** — Hold spacebar and speak ("send K9 to the robbery downtown"). Dedalus SDK parses the command and dispatches the best unit.
+- **Dual Maps** — Leaflet (2D) with CARTO dark tiles and Mapbox GL (3D) with terrain, building extrusions, and sky atmosphere.
+- **DAEDALUS Autonomous Agent** — AI agent that generates incidents across Pittsburgh neighborhoods, auto-dispatches units, and clears resolved cases.
+- **AI Bodycam Analysis** — Vision model analyzes bodycam frames every 5 seconds. Threat level, person count, and tactical observations overlay the feed.
+- **AI Incident Reports** — One-click generation of structured law enforcement reports with narrative, timeline, and recommendations.
+- **Real Road Routing** — Units follow actual road paths via Mapbox Directions API with progress tracking and ETA.
+- **Police Flash** — Red/blue alternating animation on dispatched unit markers.
+- **Search** — Geocode addresses/landmarks via Photon (OSM). Drops a marker and flies to the result.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Frontend | React 18, Vite |
+| 2D Map | Leaflet (CDN ESM) |
+| 3D Map | Mapbox GL JS (npm) |
+| Voice | Web Speech API (push-to-talk) |
+| Backend | Flask, Flask-CORS |
+| AI Engine | Dedalus SDK (DedalusRunner) |
+| LLMs | GPT-4o-mini, Claude Sonnet, Claude Vision |
+| State | In-memory (useState / Python dicts) |
+
+## Architecture
+
+```
+React (Vite :5173)  --/api proxy-->  Flask (:5001)  -->  Dedalus SDK  -->  GPT-4o / Claude
+```
+
+Vite proxies `/api/*` to Flask. All AI calls are server-side (API key never exposed to browser). Every AI feature has a frontend regex fallback if the server is offline.
+
+## Getting Started
+
+### Frontend
+
 ```bash
 npm install
 npm run dev
 ```
-Open http://localhost:5173.
 
-## Map style (actual tiles / backend)
-Create a `.env` file and add one of (priority order):
+### Backend
 
-```
-VITE_BACKEND_STYLE=https://your-backend/tiles/hd/style.json  # preferred: custom high-detail style served by your backend
-VITE_MAPTILER_KEY=your_key_here   # uses MapTiler Streets v2
-# or provide any style URL
-VITE_MAP_STYLE=https://your-style-url/style.json
+```bash
+cd server
+pip install -r requirements.txt
+python -m server.app
 ```
 
-Without any of these, the app falls back to the MapLibre demo tiles.
+### Environment
 
-## Map engines
-- MapLibre (3D-capable) with 2D/3D toggle and custom vector styles.
-- Leaflet (2D) with OSM or your own raster tiles. Set `VITE_LEAFLET_TILES` and optional `VITE_LEAFLET_ATTRIB` for attribution.
-Switch engines via the top-right button; markers, navigation, and search stay in sync.
+Create a `.env` file in the project root:
 
-## Voice commands (examples)
-- "Add marker at 40.44 -79.99 high priority"
-- "Navigate to 40.45 -79.98"
-- "Delete marker <id>" (or just click a pin)
+```
+VITE_MAPBOX_TOKEN=your_mapbox_token
+DEDALUS_API_KEY=your_dedalus_key
+```
 
-## 2D / 3D switch
-Use the toggle above the map. Both modes support placing/removing markers and camera/ETA workflows; 3D re-enables building extrusions and pitched view.
+## Voice Commands
 
-## Search bar
-Type an address or landmark and hit Enter/Go to geocode via Nominatim (OSM). The map flies to the result and drops a marker. Replace with your own geocoder endpoint if needed.
+Speak naturally while holding spacebar:
 
-## Notes
-- Markers: click the map to add; click a pin or the list button to remove.
-- ETA: straight-line distance with simple speed presets (cruiser/bike/foot) for fast estimates.
-- Camera: uses `getUserMedia`; if blocked/unavailable, falls back to a short demo clip. Pass a `streetUrl` to `CameraFeed` for remote streams.
+- "Send K9 to the robbery downtown"
+- "Dispatch nearest unit to East Liberty"
+- "We need someone at Cohon Center"
+- "Bike Squad to South Side disturbance"
+- "Navigate to Shadyside"
+
+The AI interprets intent and matches units/locations by name, type, and proximity.
+
+## Project Structure
+
+```
+src/
+  App.jsx                    # Main app, state, dispatch logic
+  components/
+    LeafletView.jsx          # 2D map
+    Map3DView.jsx            # 3D map (Mapbox GL)
+    DispatchPanel.jsx         # Sidebar dispatch board
+    TranscriptRecorder.jsx    # Voice FAB with AI integration
+    DaedalusAgent.jsx         # Autonomous AI agent
+    AIRecommendation.jsx      # Floating AI suggestion panel
+    IncidentReport.jsx        # AI report modal
+  services/
+    api.js                   # Frontend API client
+  styles.css                 # Full theme (black & white UI)
+
+server/
+  app.py                     # Flask entry point
+  config.py                  # Environment config
+  store.py                   # In-memory state
+  ai/
+    prompts.py               # Centralized system prompts
+    dispatch_ai.py           # AI dispatch parsing (6 tools)
+    bodycam_ai.py            # Vision analysis
+    report_ai.py             # Report generation
+  routes/
+    dispatch.py              # POST /api/dispatch/parse
+    bodycam.py               # POST /api/bodycam/analyze
+    reports.py               # POST /api/reports/generate
+    state.py                 # POST /api/state/sync
+```
